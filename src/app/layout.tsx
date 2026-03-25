@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "OptiBio ERP",
+  title: "Optibio ERP",
   description: "AI-Powered Nutraceutical Manufacturing Management System",
 };
 

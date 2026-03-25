@@ -7,7 +7,7 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-1">Welcome to OptiBio ERP</p>
+          <p className="text-sm text-gray-500 mt-1">Welcome to Optibio ERP</p>
         </div>
         <div className="flex gap-3">
           <Link

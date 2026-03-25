@@ -1,19 +1,19 @@
 # Product Requirements Document (PRD)
 
-## OptiBio ERP — AI-Powered Nutraceutical Manufacturing Management System
+## Optibio ERP — AI-Powered Nutraceutical Manufacturing Management System
 
-**Product:** OptiBio ERP
+**Product:** Optibio ERP
 **Version:** 1.0.0
 **Date:** March 25, 2026
 **Status:** Draft
 **Framework:** BMAD Method
-**Owner:** Panna (OptiBio / OptiBio Supplements)
+**Owner:** Panna (Optibio / Optibio Supplements)
 
 ---
 
 ## 1. Executive Summary
 
-OptiBio ERP is a unified enterprise resource planning and customer relationship management system purpose-built for the nutraceutical brokerage industry. It automates the complete RFQ-to-Quote workflow — from customer inquiry through formulation, costing, and professional quote delivery — reducing quote turnaround from 2–4 hours to under 30 minutes.
+Optibio ERP is a unified enterprise resource planning and customer relationship management system purpose-built for the nutraceutical brokerage industry. It automates the complete RFQ-to-Quote workflow — from customer inquiry through formulation, costing, and professional quote delivery — reducing quote turnaround from 2–4 hours to under 30 minutes.
 
 The system consolidates fragmented operations (8 previous attempts, 49+ source documents, multiple spreadsheets) into a single, production-grade platform with a master ingredient database of 2,567 ingredients, intelligent formulation engine, and AI-powered cost optimization.
 
@@ -155,7 +155,7 @@ Adjusted Amount (mg) = Label Claim ÷ (Active Content % / 100) × (1 + Overage %
 ### FR-4: Quote Management
 
 **FR-4.1:** System shall generate professional PDF quotes with:
-- Company header (OptiBio Supplements LLC, 131 Heartland Blvd, Edgewood, NY 11717)
+- Company header (Optibio Supplements LLC, 131 Heartland Blvd, Edgewood, NY 11717)
 - Customer details
 - Product specification summary
 - Formulation details (optional — can be hidden for customer-facing quotes)

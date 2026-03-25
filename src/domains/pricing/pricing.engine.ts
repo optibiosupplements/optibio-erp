@@ -1,5 +1,5 @@
 /**
- * OptiBio Pricing Engine
+ * Optibio Pricing Engine
  *
  * CRITICAL: Uses Active Content % for all dosage calculations, NOT Assay %.
  *

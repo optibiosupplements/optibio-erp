@@ -1,6 +1,6 @@
 # Architecture Document
 
-## OptiBio ERP — System Architecture
+## Optibio ERP — System Architecture
 
 **Version:** 1.0.0
 **Date:** March 25, 2026
@@ -13,7 +13,7 @@
 
 ### Pattern: Modular Monolith with DDD Bounded Contexts
 
-OptiBio ERP is a **Next.js full-stack application** using the App Router with server components, server actions, and API routes. The architecture follows a **Modular Monolith** pattern — a single deployable unit with clear internal boundaries between business domains. This is the correct choice for a team of 1–3 developers building an MVP, with a clean migration path to microservices if needed later.
+Optibio ERP is a **Next.js full-stack application** using the App Router with server components, server actions, and API routes. The architecture follows a **Modular Monolith** pattern — a single deployable unit with clear internal boundaries between business domains. This is the correct choice for a team of 1–3 developers building an MVP, with a clean migration path to microservices if needed later.
 
 ```
 ┌─────────────────────────────────────────────────────────┐

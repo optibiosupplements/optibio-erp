@@ -1,6 +1,6 @@
 # Epics & Stories
 
-## OptiBio ERP — Implementation Breakdown
+## Optibio ERP — Implementation Breakdown
 
 **Date:** March 25, 2026
 **Method:** BMAD Phase 3
@@ -206,7 +206,7 @@
 **As a** user, **I want** professional PDF quotes **so that** I can send them to customers.
 
 **Acceptance Criteria:**
-- [ ] Company header: OptiBio Supplements, 131 Heartland Blvd, Edgewood, NY 11717, (631) 939-2626
+- [ ] Company header: Optibio Supplements, 131 Heartland Blvd, Edgewood, NY 11717, (631) 939-2626
 - [ ] Customer details
 - [ ] Product specification summary
 - [ ] Tiered pricing table (all 3 tiers)

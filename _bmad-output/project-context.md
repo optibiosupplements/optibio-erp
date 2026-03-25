@@ -1,9 +1,9 @@
-# Project Context — OptiBio ERP/CRM
+# Project Context — Optibio ERP/CRM
 
 ## Project Overview
-**Name:** OptiBio ERP
+**Name:** Optibio ERP
 **Domain:** Nutraceutical (dietary supplement) brokerage and contract manufacturing
-**Business:** OptiBio / OptiBio Supplements — a supplement development and manufacturing partner providing end-to-end solutions for brands launching dietary supplement products
+**Business:** Optibio / Optibio Supplements — a supplement development and manufacturing partner providing end-to-end solutions for brands launching dietary supplement products
 **Goal:** Unified ERP/CRM system that automates the RFQ-to-Quote workflow, reducing quote generation from 2-4 hours to under 30 minutes
 
 ## Technology Stack
