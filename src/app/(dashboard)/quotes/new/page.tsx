@@ -14,7 +14,10 @@ import {
   FlaskConical,
   DollarSign,
   Check,
+  Save,
+  Loader2,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { generateTieredQuote } from "@/domains/pricing/pricing.engine";
 import type { IngredientLine, QuoteSummary } from "@/domains/pricing/pricing.types";
 import { sizeCapsule, CAPSULE_CAPACITIES } from "@/domains/formulation/capsule-sizer";
@@ -283,6 +286,71 @@ export default function NewQuotePage() {
   const cogsPerBottle = totalRmPerBottle + mfgPerBottle + pkgPerBottle + overheadPerBottle;
 
   const hasEstimated = lines.some((l) => l.isEstimated);
+  const [saving, setSaving] = useState(false);
+  const [savedQuoteNumber, setSavedQuoteNumber] = useState<string | null>(null);
+  const router = useRouter();
+
+  const saveQuote = async () => {
+    if (!calculated) return;
+    setSaving(true);
+    try {
+      const tierData = TIERS.map((tier) => {
+        const setupAmortized = mfg.setupCostPerBatch / tier.quantity;
+        const totalCogs = cogsPerBottle + setupAmortized;
+        const price = totalCogs / (1 - tier.marginPct / 100);
+        return {
+          quantity: tier.quantity,
+          rawMaterialCost: totalRmPerBottle,
+          manufacturingCost: mfgPerBottle,
+          packagingCost: pkgPerBottle,
+          overheadCost: overheadPerBottle,
+          cogsPerUnit: totalCogs,
+          marginPct: tier.marginPct,
+          pricePerUnit: price,
+          totalBatchPrice: price * tier.quantity,
+        };
+      });
+
+      const res = await fetch("/api/quotes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productName,
+          customerName,
+          dosageForm,
+          servingSize: servingSizeNum,
+          containerCount: containerCountNum,
+          tiers: tierData,
+          ingredients: lines.filter((l) => l.name.trim()).map((l) => ({
+            name: l.name,
+            rmId: l.rmId,
+            labelClaimMg: l.labelClaimMg,
+            activeContentPct: l.activeContentPct,
+            overagePct: l.overagePct,
+            wastagePct: l.wastagePct,
+            costPerKg: l.costPerKg,
+            finalMg: l.finalMg,
+            lineCost: l.lineCost,
+            isExcipient: l.isExcipient,
+            isEstimated: l.isEstimated,
+          })),
+          manufacturing: mfg,
+          packaging: pkg,
+          cogsPerBottle,
+          totalFillMg,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setSavedQuoteNumber(data.quoteNumber);
+      }
+    } catch (err) {
+      console.error("Save failed:", err);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // ─── Render ─────────────────────────────────────────────────────────────
 
@@ -598,6 +666,30 @@ export default function NewQuotePage() {
               </div>
             </div>
           )}
+
+          {/* Save / Success */}
+          <div className="flex items-center gap-4 mt-2">
+            {!savedQuoteNumber ? (
+              <button
+                onClick={saveQuote}
+                disabled={saving}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-gray-900 text-white font-semibold rounded-xl hover:bg-gray-800 transition-colors shadow-sm disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Save className="h-5 w-5" />}
+                {saving ? "Saving..." : "Save Quote"}
+              </button>
+            ) : (
+              <div className="flex items-center gap-3 px-5 py-3 bg-green-50 border border-green-200 rounded-xl">
+                <Check className="h-5 w-5 text-green-600" />
+                <div>
+                  <p className="text-sm font-semibold text-green-800">Quote saved: {savedQuoteNumber}</p>
+                  <button onClick={() => router.push("/quotes")} className="text-xs text-green-600 hover:underline mt-0.5">
+                    View all quotes →
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </>
       )}
     </div>
