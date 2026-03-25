@@ -206,7 +206,7 @@
 **As a** user, **I want** professional PDF quotes **so that** I can send them to customers.
 
 **Acceptance Criteria:**
-- [ ] Company header: Advanced Supplements LLC, 131 Heartland Blvd, Edgewood, NY 11717, (631) 939-2626
+- [ ] Company header: OptiBio Supplements, 131 Heartland Blvd, Edgewood, NY 11717, (631) 939-2626
 - [ ] Customer details
 - [ ] Product specification summary
 - [ ] Tiered pricing table (all 3 tiers)

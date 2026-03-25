@@ -3,7 +3,7 @@
 ## Project Overview
 **Name:** OptiBio ERP
 **Domain:** Nutraceutical (dietary supplement) brokerage and contract manufacturing
-**Business:** OptiBio / Advanced Supplements — a supplement development and manufacturing partner providing end-to-end solutions for brands launching dietary supplement products
+**Business:** OptiBio / OptiBio Supplements — a supplement development and manufacturing partner providing end-to-end solutions for brands launching dietary supplement products
 **Goal:** Unified ERP/CRM system that automates the RFQ-to-Quote workflow, reducing quote generation from 2-4 hours to under 30 minutes
 
 ## Technology Stack

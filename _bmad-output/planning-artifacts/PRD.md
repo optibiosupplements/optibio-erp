@@ -7,7 +7,7 @@
 **Date:** March 25, 2026
 **Status:** Draft
 **Framework:** BMAD Method
-**Owner:** Panna (OptiBio / Advanced Supplements)
+**Owner:** Panna (OptiBio / OptiBio Supplements)
 
 ---
 
@@ -155,7 +155,7 @@ Adjusted Amount (mg) = Label Claim ÷ (Active Content % / 100) × (1 + Overage %
 ### FR-4: Quote Management
 
 **FR-4.1:** System shall generate professional PDF quotes with:
-- Company header (Advanced Supplements LLC, 131 Heartland Blvd, Edgewood, NY 11717)
+- Company header (OptiBio Supplements LLC, 131 Heartland Blvd, Edgewood, NY 11717)
 - Customer details
 - Product specification summary
 - Formulation details (optional — can be hidden for customer-facing quotes)
