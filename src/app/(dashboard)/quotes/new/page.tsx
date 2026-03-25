@@ -16,6 +16,10 @@ import {
   Check,
   Save,
   Loader2,
+  Upload,
+  FileUp,
+  Sparkles,
+  X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { generateTieredQuote } from "@/domains/pricing/pricing.engine";
@@ -149,6 +153,86 @@ export default function NewQuotePage() {
   const [calculated, setCalculated] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [capsuleResult, setCapsuleResult] = useState<ReturnType<typeof sizeCapsule> | null>(null);
+
+  // AI Extraction
+  const [extracting, setExtracting] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleExtract = async (file: File) => {
+    setExtracting(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/extract", { method: "POST", body: formData });
+      const data = await res.json();
+
+      if (!data.success) {
+        setErrors([data.error || "Extraction failed"]);
+        return;
+      }
+
+      const ext = data.extracted;
+
+      // Fill product info
+      if (ext.productName) setProductName(ext.productName);
+      if (ext.dosageForm) setDosageForm(ext.dosageForm === "capsule" ? "capsule" : "tablet");
+      if (ext.servingSize) setServingSize(String(ext.servingSize));
+      if (ext.servingsPerContainer) setContainerCount(String(ext.servingsPerContainer));
+
+      // Build formula lines from matched ingredients
+      const newLines: FormulaLine[] = [];
+
+      for (const mi of data.matchedIngredients || []) {
+        const db = mi.dbMatch;
+        const ovPct = dosageForm === "capsule" ? db?.overageCapsule : db?.overageTablet;
+        const waPct = dosageForm === "capsule" ? db?.wastageCapsule : db?.wastageTablet;
+
+        newLines.push({
+          key: nextKey(),
+          dbIngredient: db,
+          name: db?.name || mi.name,
+          rmId: db?.rmId || "",
+          labelClaimMg: String(mi.amount || ""),
+          activeContentPct: db?.activeContentPct || "100",
+          overagePct: ovPct || db?.baseOveragePct || "10",
+          wastagePct: waPct || db?.baseWastagePct || "3",
+          costPerKg: db?.costPerKg || "",
+          supplier: db?.supplierName || "",
+          isEstimated: db?.isEstimatedPrice || false,
+          isExcipient: false,
+          adjustedMg: 0,
+          finalMg: 0,
+          rmRequiredKg: 0,
+          lineCost: 0,
+        });
+      }
+
+      if (newLines.length > 0) {
+        setLines(newLines);
+      }
+
+      setErrors([]);
+      setCalculated(false);
+    } catch (err: any) {
+      setErrors(["Extraction failed: " + (err.message || "Unknown error")]);
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleExtract(file);
+  };
+
+  const onFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleExtract(file);
+  };
 
   // Derived
   const servingSizeNum = parseInt(servingSize) || 1;
@@ -362,6 +446,63 @@ export default function NewQuotePage() {
         <p className="text-sm text-gray-500 mt-1">
           TM-style formulation costing — Part A (Raw Materials) → Part B (Manufacturing) → Part C (Packaging) → Pricing
         </p>
+      </div>
+
+      {/* ── AI Intake: Drag & Drop ────────────────────────────────────── */}
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={onDrop}
+        className={`relative mb-6 rounded-2xl border-2 border-dashed p-8 text-center transition-all cursor-pointer ${
+          dragOver
+            ? "border-[#d10a11] bg-red-50/50"
+            : extracting
+            ? "border-blue-300 bg-blue-50/30"
+            : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50/50"
+        }`}
+        onClick={() => !extracting && fileInputRef.current?.click()}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.png,.jpg,.jpeg,.webp"
+          onChange={onFileSelect}
+          className="hidden"
+        />
+        {extracting ? (
+          <div className="flex flex-col items-center gap-3">
+            <div className="relative">
+              <Loader2 className="h-10 w-10 text-blue-500 animate-spin" />
+              <Sparkles className="h-4 w-4 text-blue-400 absolute -top-1 -right-1 animate-pulse" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-blue-700">AI is extracting the supplement facts panel...</p>
+              <p className="text-xs text-blue-500 mt-1">Identifying ingredients, dosages, and matching against 2,567 ingredients in our database</p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className="p-3 rounded-xl bg-gray-100">
+                <FileUp className="h-6 w-6 text-gray-400" />
+              </div>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-700">
+                Drop a Supplement Facts panel here
+              </p>
+              <p className="text-xs text-gray-400 mt-1">
+                PDF, PNG, or JPG — AI will extract all ingredients, dosages, and auto-build the formulation
+              </p>
+            </div>
+            <div className="flex items-center gap-4 mt-1">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 rounded-lg text-xs text-gray-500">
+                <Upload className="h-3 w-3" /> Upload file
+              </span>
+              <span className="text-xs text-gray-300">or drag & drop</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Step 0: Product Info ─────────────────────────────────────────── */}
