@@ -374,7 +374,7 @@ function IngTable({ lines, section, exc, si, sq, sr, onS, onDS, onSel, onUp, onR
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-[11px]">
-        <thead><tr className="text-gray-400 font-medium border-b text-[10px]">
+        <thead><tr className="text-gray-600 font-medium border-b text-[10px]">
           <th className="text-left px-1 py-1.5 w-5">#</th><th className="text-left px-1 py-1.5 min-w-[180px]">Ingredient</th>
           {!exc && <th className="text-right px-1 py-1.5 w-16">Label mg</th>}{!exc && <th className="text-right px-1 py-1.5 w-14">Active%</th>}
           <th className="text-right px-1 py-1.5 w-12">Ov%</th><th className="text-right px-1 py-1.5 w-12">Wa%</th>
@@ -385,7 +385,7 @@ function IngTable({ lines, section, exc, si, sq, sr, onS, onDS, onSel, onUp, onR
           const noDb = !l.inDb && l.name.trim().length > 0;
           return (
             <tr key={l.key} className={`border-b border-gray-50 ${noDb ? "bg-red-50 border-l-2 border-l-red-400" : ""}`}>
-              <td className="px-1 py-1 text-gray-300 text-center">{i + 1}</td>
+              <td className="px-1 py-1 text-gray-500 text-center">{i + 1}</td>
               <td className="px-1 py-1 relative">{isSrch ? (
                 <div className="relative">
                   <input autoFocus value={sq} onChange={e => onDS(e.target.value)} onBlur={() => setTimeout(onCS, 200)} className="input-field text-[11px] py-1 pl-6 w-full" placeholder="Search..." />
@@ -401,8 +401,8 @@ function IngTable({ lines, section, exc, si, sq, sr, onS, onDS, onSel, onUp, onR
                 <div className="flex items-center gap-1">
                   {l.inDb && l.name.trim() && <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />}
                   {noDb && <XCircle className="h-3 w-3 text-red-500 shrink-0" />}
-                  <button onClick={() => onS(i)} className="text-left text-[11px] hover:bg-gray-50 rounded px-1 py-0.5 flex-1 truncate">{l.name || <span className="text-gray-300 italic">Search...</span>}</button>
-                  {l.rmId && <span className="text-[8px] text-gray-300 font-mono">{l.rmId}</span>}
+                  <button onClick={() => onS(i)} className="text-left text-[11px] text-gray-900 font-medium hover:bg-gray-50 rounded px-1 py-0.5 flex-1 truncate">{l.name || <span className="text-gray-400 italic font-normal">Search...</span>}</button>
+                  {l.rmId && <span className="text-[8px] text-gray-500 font-mono">{l.rmId}</span>}
                   {noDb && <button onClick={() => onAdd(i)} className="shrink-0 px-1.5 py-0.5 bg-red-600 text-white text-[8px] font-bold rounded hover:bg-red-700">+DB</button>}
                 </div>
               )}</td>
@@ -411,7 +411,7 @@ function IngTable({ lines, section, exc, si, sq, sr, onS, onDS, onSel, onUp, onR
               <td className="px-1 py-1"><input type="number" value={l.overagePct} onChange={e => onUp(section, i, "overagePct", e.target.value)} className="input-field text-[11px] py-0.5 text-right w-full" placeholder="0" /></td>
               <td className="px-1 py-1"><input type="number" value={l.wastagePct} onChange={e => onUp(section, i, "wastagePct", e.target.value)} className="input-field text-[11px] py-0.5 text-right w-full" placeholder="3" /></td>
               <td className="px-1 py-1"><input type="number" value={l.costPerKg} onChange={e => onUp(section, i, "costPerKg", e.target.value)} className="input-field text-[11px] py-0.5 text-right w-full font-mono" placeholder="0" /></td>
-              <td className="px-1 py-1 text-[9px] text-gray-400 truncate max-w-[80px]" title={l.supplier}>{l.supplier || "—"}</td>
+              <td className="px-1 py-1 text-[10px] text-gray-600 truncate max-w-[80px]" title={l.supplier}>{l.supplier || "—"}</td>
               <td className="px-1 py-1"><button onClick={() => onRm(section, i)} className="p-0.5 text-gray-200 hover:text-red-500"><Trash2 className="h-3 w-3" /></button></td>
             </tr>
           );
