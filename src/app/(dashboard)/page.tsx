@@ -43,14 +43,9 @@ export default async function DashboardPage() {
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-sm text-gray-500 mt-1">Welcome to Optibio ERP</p>
         </div>
-        <div className="flex gap-3">
-          <Link href="/deals/new" className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#d10a11] text-white text-sm font-semibold rounded-xl hover:bg-[#a30a0f] transition-colors shadow-sm">
-            <Plus className="h-4 w-4" /> New Deal
-          </Link>
-          <Link href="/ingredients" className="inline-flex items-center gap-2 px-4 py-2.5 bg-white text-gray-700 text-sm font-medium rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">
-            <Search className="h-4 w-4" /> Ingredients
-          </Link>
-        </div>
+        <Link href="/ingredients" className="inline-flex items-center gap-2 px-4 py-2.5 bg-white text-gray-700 text-sm font-medium rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">
+          <Search className="h-4 w-4" /> Search Ingredients
+        </Link>
       </div>
 
       {/* Hero CTA */}
@@ -91,10 +86,7 @@ export default async function DashboardPage() {
           <div className="text-center py-14 px-6">
             <ClipboardList className="h-12 w-12 text-gray-200 mx-auto mb-3" />
             <p className="text-gray-500 font-medium text-sm">No deals yet.</p>
-            <p className="text-gray-400 text-xs mt-1">Drop a supplement facts panel to start your first deal.</p>
-            <Link href="/deals/new" className="inline-flex items-center gap-2 mt-5 px-5 py-2.5 bg-[#d10a11] text-white text-sm font-semibold rounded-xl hover:bg-[#a30a0f] transition-colors">
-              <Plus className="h-4 w-4" /> New Deal
-            </Link>
+            <p className="text-gray-400 text-xs mt-1">Use the banner above to start your first deal.</p>
           </div>
         ) : (
           <table className="w-full text-sm">
