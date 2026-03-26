@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import CostSummaryPanel from "@/components/deal/CostSummaryPanel";
 import AddToDbModal from "@/components/deal/AddToDbModal";
+import EvaChat from "@/components/deal/EvaChat";
 import { calculateIngredientCost } from "@/domains/pricing/pricing.engine";
 import { DOSAGE_FORM_MFG, PKG_PRESETS, DEFAULT_TIERS, type MfgDefaults, type PackagingCosts } from "@/domains/pricing/pricing.types";
 
@@ -556,7 +557,32 @@ export default function NewDealWizard() {
             </div>
           )}
 
-          {/* Match Summary */}
+          {/* Eva — Formulation Review */}
+          <EvaChat
+            context={{
+              productName: extraction.productName,
+              dosageForm: extraction.dosageForm,
+              servingSize: String(extraction.servingSize),
+              servingsPerContainer: String(extraction.servingsPerContainer),
+              moq,
+              bulkOrPackaged,
+              specialRequirements,
+              ingredientNames: [
+                ...extraction.activeIngredients.map((i) => i.name),
+                ...extraction.otherIngredients,
+              ],
+              activeIngredients: extraction.activeIngredients.map((ing, idx) => ({
+                name: ing.name,
+                amount: ing.amount,
+                unit: ing.unit,
+                notes: ing.notes || undefined,
+                inDb: extraction.activeLines[idx]?.inDb,
+              })),
+              excipients: extraction.otherIngredients,
+            }}
+          />
+
+          {/* Match Summary & Continue */}
           <div className="flex items-center justify-between bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
             <div className="flex items-center gap-4 text-sm">
               <span className="text-green-600 font-semibold">{extraction.matchedCount} matched</span>
