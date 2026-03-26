@@ -12,6 +12,7 @@ import {
   Package,
   Settings,
   ClipboardList,
+  Truck,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -20,6 +21,7 @@ const NAV_ITEMS = [
   { href: "/quotes", label: "Quotes", icon: FileText },
   { href: "/formulations", label: "Formulations", icon: FlaskConical },
   { href: "/ingredients", label: "Ingredients", icon: Pill },
+  { href: "/suppliers", label: "Suppliers", icon: Truck },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/pipeline", label: "Pipeline", icon: Kanban },
   { href: "/packaging", label: "Packaging", icon: Package },
