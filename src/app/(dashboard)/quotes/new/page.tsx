@@ -1,893 +1,443 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
-import {
-  Plus,
-  Trash2,
-  Calculator,
-  FileDown,
-  AlertTriangle,
-  Search,
-  ChevronRight,
-  Package,
-  Factory,
-  FlaskConical,
-  DollarSign,
-  Check,
-  Save,
-  Loader2,
-  Upload,
-  FileUp,
-  Sparkles,
-  X,
-} from "lucide-react";
+import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { generateTieredQuote } from "@/domains/pricing/pricing.engine";
-import type { IngredientLine, QuoteSummary } from "@/domains/pricing/pricing.types";
-import { sizeCapsule, CAPSULE_CAPACITIES } from "@/domains/formulation/capsule-sizer";
+import {
+  FileUp, Loader2, Plus, Trash2, Search, CheckCircle2, XCircle,
+  FlaskConical, Factory, Package, ChevronDown, ChevronRight,
+  Save, FileDown, X, Bot,
+} from "lucide-react";
+import AddToDbModal from "@/components/deal/AddToDbModal";
+import EvaChat from "@/components/deal/EvaChat";
+import { calculateIngredientCost } from "@/domains/pricing/pricing.engine";
+import { DOSAGE_FORM_MFG, PKG_PRESETS, DEFAULT_TIERS, type MfgDefaults, type PackagingCosts } from "@/domains/pricing/pricing.types";
 
-// ─── Types ──────────────────────────────────────────────────────────────────
-
-interface DbIngredient {
-  id: string;
-  rmId: string;
-  name: string;
-  category: string;
-  supplierName: string;
-  costPerKg: string;
-  activeContentPct: string;
-  baseOveragePct: string;
-  baseWastagePct: string;
-  overageCapsule: string | null;
-  overageTablet: string | null;
-  wastageCapsule: string | null;
-  wastageTablet: string | null;
-  isEstimatedPrice: boolean;
-  labelClaimActive: boolean;
-}
+// ─── Types ──────────────────────────────────────────────────────────────
 
 interface FormulaLine {
-  key: string;
-  dbIngredient: DbIngredient | null;
-  name: string;
-  rmId: string;
-  labelClaimMg: string;
-  activeContentPct: string;
-  overagePct: string;
-  wastagePct: string;
-  costPerKg: string;
-  supplier: string;
-  isEstimated: boolean;
-  isExcipient: boolean;
-  // Calculated
-  adjustedMg: number;
-  finalMg: number;
-  rmRequiredKg: number;
-  lineCost: number;
+  key: string; name: string; rmId: string; labelClaimMg: string;
+  activeContentPct: string; overagePct: string; wastagePct: string;
+  costPerKg: string; supplier: string; isEstimated: boolean;
+  isExcipient: boolean; inDb: boolean; dbId: string | null;
+  aiCategory?: string; aiUnit?: string; notes?: string;
 }
 
-interface PackagingLine {
-  name: string;
-  costPerBottle: number;
-}
+let _ctr = 0;
+const key = () => "fl-" + ++_ctr;
+const emptyLine = (excipient = false): FormulaLine => ({
+  key: key(), name: "", rmId: "", labelClaimMg: "", activeContentPct: "100",
+  overagePct: excipient ? "0" : "10", wastagePct: "3", costPerKg: "",
+  supplier: "", isEstimated: false, isExcipient: excipient, inDb: false, dbId: null,
+});
 
-interface MfgCosts {
-  blendingLaborPerUnit: number;
-  compressionOrEncapPerUnit: number;
-  productionWastePct: number;
-  setupCostPerBatch: number;
-}
-
-// ─── Defaults ───────────────────────────────────────────────────────────────
-
-const DEFAULT_MFG: MfgCosts = {
-  blendingLaborPerUnit: 0.048,
-  compressionOrEncapPerUnit: 0.065,
-  productionWastePct: 2,
-  setupCostPerBatch: 200,
+const PKG_LABELS: Record<string, string> = {
+  bottleCost: "Bottle", capCost: "Cap", desiccantCost: "Desiccant", sleeveCost: "Sleeve",
+  labelCost: "Label", cartonCostPerUnit: "Carton", palletCostPerUnit: "Pallet", packagingLaborPerUnit: "Pkg Labor",
 };
 
-const DEFAULT_PKG: PackagingLine[] = [
-  { name: "HDPE Bottle", costPerBottle: 0.428 },
-  { name: "Cap", costPerBottle: 0.113 },
-  { name: "Desiccant", costPerBottle: 0.0234 },
-  { name: "Heat Shrink Sleeve", costPerBottle: 0.01 },
-  { name: "Label", costPerBottle: 0.065 },
-  { name: "Carton (IFC Box)", costPerBottle: 0.01875 },
-  { name: "Pallet Cost", costPerBottle: 0.00247 },
-  { name: "Packaging Labor", costPerBottle: 0.03462 },
-];
+const fmtCost = (v: number) => v === 0 ? "$0.00" : v < 0.01 ? `$${v.toFixed(4)}` : `$${v.toFixed(2)}`;
 
-const TIERS = [
-  { quantity: 2000, marginPct: 40 },
-  { quantity: 5000, marginPct: 35 },
-  { quantity: 10000, marginPct: 30 },
-];
+// ─── Main Component ─────────────────────────────────────────────────────
 
-let lineCounter = 0;
-function nextKey() {
-  return "line-" + ++lineCounter;
-}
-
-function emptyLine(): FormulaLine {
-  return {
-    key: nextKey(),
-    dbIngredient: null,
-    name: "",
-    rmId: "",
-    labelClaimMg: "",
-    activeContentPct: "100",
-    overagePct: "10",
-    wastagePct: "3",
-    costPerKg: "",
-    supplier: "",
-    isEstimated: false,
-    isExcipient: false,
-    adjustedMg: 0,
-    finalMg: 0,
-    rmRequiredKg: 0,
-    lineCost: 0,
-  };
-}
-
-// ─── Component ──────────────────────────────────────────────────────────────
-
-export default function NewQuotePage() {
-  // Product info
-  const [productName, setProductName] = useState("");
-  const [customerName, setCustomerName] = useState("");
-  const [dosageForm, setDosageForm] = useState<"capsule" | "tablet">("tablet");
-  const [servingSize, setServingSize] = useState("1");
-  const [containerCount, setContainerCount] = useState("60");
-
-  // Part A: Formula
-  const [lines, setLines] = useState<FormulaLine[]>([emptyLine()]);
-
-  // Part B: Manufacturing
-  const [mfg, setMfg] = useState<MfgCosts>(DEFAULT_MFG);
-
-  // Part C: Packaging
-  const [pkg, setPkg] = useState<PackagingLine[]>(DEFAULT_PKG);
-
-  // Results
-  const [calculated, setCalculated] = useState(false);
-  const [errors, setErrors] = useState<string[]>([]);
-  const [capsuleResult, setCapsuleResult] = useState<ReturnType<typeof sizeCapsule> | null>(null);
-
-  // AI Extraction
-  const [extracting, setExtracting] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleExtract = async (file: File) => {
-    setExtracting(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const res = await fetch("/api/extract", { method: "POST", body: formData });
-      const data = await res.json();
-
-      if (!data.success) {
-        setErrors([data.error || "Extraction failed"]);
-        return;
-      }
-
-      const ext = data.extracted;
-
-      // Fill product info
-      if (ext.productName) setProductName(ext.productName);
-      if (ext.dosageForm) setDosageForm(ext.dosageForm === "capsule" ? "capsule" : "tablet");
-      if (ext.servingSize) setServingSize(String(ext.servingSize));
-      if (ext.servingsPerContainer) setContainerCount(String(ext.servingsPerContainer));
-
-      // Build formula lines from matched ingredients
-      const newLines: FormulaLine[] = [];
-
-      for (const mi of data.matchedIngredients || []) {
-        const db = mi.dbMatch;
-        const ovPct = dosageForm === "capsule" ? db?.overageCapsule : db?.overageTablet;
-        const waPct = dosageForm === "capsule" ? db?.wastageCapsule : db?.wastageTablet;
-
-        newLines.push({
-          key: nextKey(),
-          dbIngredient: db,
-          name: db?.name || mi.name,
-          rmId: db?.rmId || "",
-          labelClaimMg: String(mi.amount || ""),
-          activeContentPct: db?.activeContentPct || "100",
-          overagePct: ovPct || db?.baseOveragePct || "10",
-          wastagePct: waPct || db?.baseWastagePct || "3",
-          costPerKg: db?.costPerKg || "",
-          supplier: db?.supplierName || "",
-          isEstimated: db?.isEstimatedPrice || false,
-          isExcipient: false,
-          adjustedMg: 0,
-          finalMg: 0,
-          rmRequiredKg: 0,
-          lineCost: 0,
-        });
-      }
-
-      if (newLines.length > 0) {
-        setLines(newLines);
-      }
-
-      setErrors([]);
-      setCalculated(false);
-    } catch (err: any) {
-      setErrors(["Extraction failed: " + (err.message || "Unknown error")]);
-    } finally {
-      setExtracting(false);
-    }
-  };
-
-  const onDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) handleExtract(file);
-  };
-
-  const onFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleExtract(file);
-  };
-
-  // Derived
-  const servingSizeNum = parseInt(servingSize) || 1;
-  const containerCountNum = parseInt(containerCount) || 60;
-  const batchUnits = (qty: number) => qty; // qty = bottles
-
-  // ─── Ingredient Search ──────────────────────────────────────────────────
-
-  const [searchIndex, setSearchIndex] = useState<number | null>(null);
-  const [searchResults, setSearchResults] = useState<DbIngredient[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const searchTimeout = useRef<NodeJS.Timeout | null>(null);
-
-  const doSearch = useCallback((query: string) => {
-    setSearchQuery(query);
-    if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    if (query.length < 2) {
-      setSearchResults([]);
-      return;
-    }
-    searchTimeout.current = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/ingredients/search?q=${encodeURIComponent(query)}`);
-        const data = await res.json();
-        setSearchResults(data);
-      } catch {
-        setSearchResults([]);
-      }
-    }, 250);
-  }, []);
-
-  const selectIngredient = (lineIdx: number, ing: DbIngredient) => {
-    const ovPct = dosageForm === "capsule" ? ing.overageCapsule : ing.overageTablet;
-    const waPct = dosageForm === "capsule" ? ing.wastageCapsule : ing.wastageTablet;
-
-    const updated = [...lines];
-    updated[lineIdx] = {
-      ...updated[lineIdx],
-      dbIngredient: ing,
-      name: ing.name,
-      rmId: ing.rmId,
-      activeContentPct: ing.activeContentPct,
-      overagePct: ovPct ?? ing.baseOveragePct ?? "10",
-      wastagePct: waPct ?? ing.baseWastagePct ?? "3",
-      costPerKg: ing.costPerKg,
-      supplier: ing.supplierName || "",
-      isEstimated: ing.isEstimatedPrice,
-      isExcipient: !ing.labelClaimActive,
-    };
-    setLines(updated);
-    setSearchIndex(null);
-    setSearchResults([]);
-    setSearchQuery("");
-  };
-
-  // ─── Line Management ────────────────────────────────────────────────────
-
-  const addLine = () => setLines([...lines, emptyLine()]);
-  const removeLine = (i: number) => {
-    if (lines.length <= 1) return;
-    setLines(lines.filter((_, idx) => idx !== i));
-  };
-  const updateLine = (i: number, field: keyof FormulaLine, value: string | boolean) => {
-    const updated = [...lines];
-    updated[i] = { ...updated[i], [field]: value };
-    setLines(updated);
-  };
-
-  // ─── Calculate ──────────────────────────────────────────────────────────
-
-  const calculate = useCallback(() => {
-    const errs: string[] = [];
-    const calculated: FormulaLine[] = [];
-
-    for (const line of lines) {
-      if (!line.name.trim()) continue;
-      const lc = parseFloat(line.labelClaimMg);
-      const ac = parseFloat(line.activeContentPct);
-      const ov = parseFloat(line.overagePct);
-      const wa = parseFloat(line.wastagePct);
-      const cost = parseFloat(line.costPerKg);
-
-      if (isNaN(lc) || lc <= 0) { errs.push(`${line.name}: enter label claim (mg)`); continue; }
-      if (isNaN(ac) || ac <= 0) { errs.push(`${line.name}: enter active content %`); continue; }
-      if (isNaN(cost) || cost <= 0) { errs.push(`${line.name}: enter cost/kg`); continue; }
-
-      const adjustedMg = lc / (ac / 100);
-      const finalMg = adjustedMg * (1 + (isNaN(ov) ? 0 : ov) / 100);
-      const totalServings = containerCountNum * servingSizeNum;
-      const rmRequiredKg = (finalMg * totalServings) / 1_000_000; // per batch of 1 bottle
-      const rmCostPerUnit = (finalMg / 1_000_000) * cost;
-      const lineCost = rmCostPerUnit * (1 + (isNaN(wa) ? 0 : wa) / 100);
-
-      calculated.push({
-        ...line,
-        adjustedMg: round(adjustedMg),
-        finalMg: round(finalMg),
-        rmRequiredKg: round(rmRequiredKg, 6),
-        lineCost: round(lineCost, 6),
-      });
-    }
-
-    if (calculated.length === 0) {
-      errs.push("Add at least one ingredient with valid data.");
-    }
-
-    setErrors(errs);
-    if (errs.length > 0) return;
-
-    setLines(calculated);
-
-    // Capsule sizing
-    const totalFillMg = calculated.reduce((s, l) => s + l.finalMg, 0) * servingSizeNum;
-    if (dosageForm === "capsule") {
-      setCapsuleResult(sizeCapsule(totalFillMg));
-    } else {
-      setCapsuleResult(null);
-    }
-
-    setCalculated(true);
-  }, [lines, dosageForm, servingSizeNum, containerCountNum]);
-
-  // ─── Derived Totals ─────────────────────────────────────────────────────
-
-  const totalRmPerServing = lines.reduce((s, l) => s + l.lineCost, 0);
-  const totalRmPerBottle = totalRmPerServing * containerCountNum * servingSizeNum;
-  const totalFillMg = lines.reduce((s, l) => s + l.finalMg, 0);
-
-  const mfgPerBottle =
-    (mfg.blendingLaborPerUnit + mfg.compressionOrEncapPerUnit) * containerCountNum * servingSizeNum +
-    totalRmPerBottle * (mfg.productionWastePct / 100);
-
-  const pkgPerBottle = pkg.reduce((s, p) => s + p.costPerBottle, 0);
-  const overheadPerBottle = (totalRmPerBottle + mfgPerBottle) * 0.15;
-  const cogsPerBottle = totalRmPerBottle + mfgPerBottle + pkgPerBottle + overheadPerBottle;
-
-  const hasEstimated = lines.some((l) => l.isEstimated);
-  const [saving, setSaving] = useState(false);
-  const [savedQuoteNumber, setSavedQuoteNumber] = useState<string | null>(null);
+export default function QuoteWorkspace() {
   const router = useRouter();
 
-  const saveQuote = async () => {
-    if (!calculated) return;
+  // IDs
+  const [rfqId] = useState(() => {
+    const now = new Date();
+    const seq = String(Math.floor(Math.random() * 999) + 1).padStart(3, "0");
+    return `RFQ-${now.getFullYear()}-${seq}`;
+  });
+  const [dealId, setDealId] = useState<string | null>(null);
+
+  // Product
+  const [productName, setProductName] = useState("");
+  const [customerCompany, setCustomerCompany] = useState("");
+  const [dosageForm, setDosageForm] = useState("tablet");
+  const [servingSize, setServingSize] = useState("1");
+  const [countPerBottle, setCountPerBottle] = useState("60");
+  const [moq, setMoq] = useState("2000");
+  const [bulkOrPackaged, setBulkOrPackaged] = useState<"bulk" | "packaged">("packaged");
+  const [flavor, setFlavor] = useState("");
+
+  // Formula
+  const [activeLines, setActiveLines] = useState<FormulaLine[]>([emptyLine(false)]);
+  const [excipientLines, setExcipientLines] = useState<FormulaLine[]>([]);
+
+  // Mfg & Pkg
+  const [mfg, setMfg] = useState<MfgDefaults>(DOSAGE_FORM_MFG["tablet"]);
+  const [pkgPreset, setPkgPreset] = useState("Standard 60ct Bottle");
+  const [pkg, setPkg] = useState<PackagingCosts>(PKG_PRESETS[0].values);
+
+  // UI
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [showEva, setShowEva] = useState(false);
+  const [mfgOpen, setMfgOpen] = useState(false);
+  const [pkgOpen, setPkgOpen] = useState(false);
+  const [searchIdx, setSearchIdx] = useState<{ section: "active" | "excipient"; idx: number } | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [addToDbModal, setAddToDbModal] = useState<{ line: FormulaLine; section: "active" | "excipient"; idx: number } | null>(null);
+  const searchTimeout = useRef<NodeJS.Timeout | null>(null);
+  const [extractionFileName, setExtractionFileName] = useState("");
+
+  useEffect(() => { setMfg(DOSAGE_FORM_MFG[dosageForm] || DOSAGE_FORM_MFG["tablet"]); }, [dosageForm]);
+
+  // Load pending extraction from landing page
+  useEffect(() => {
+    const pending = sessionStorage.getItem("pendingExtraction");
+    if (!pending) return;
+    sessionStorage.removeItem("pendingExtraction");
+    try {
+      const { extracted: ext, matchedIngredients, matchedExcipients, fileName } = JSON.parse(pending);
+      const form = (ext.dosageForm || "tablet").toLowerCase();
+      if (ext.productName) setProductName(ext.productName);
+      if (form) setDosageForm(form);
+      if (ext.servingSize) setServingSize(String(ext.servingSize));
+      if (ext.servingsPerContainer) setCountPerBottle(String(ext.servingsPerContainer));
+      if (ext.flavor) setFlavor(ext.flavor);
+      if (fileName) setExtractionFileName(fileName);
+
+      const newActives: FormulaLine[] = [];
+      for (const mi of matchedIngredients || []) {
+        const db = mi.dbMatch;
+        const ov = db ? (form === "capsule" ? (db.overageCapsule ?? db.baseOveragePct) : (db.overageTablet ?? db.baseOveragePct)) : null;
+        const wa = db ? (form === "capsule" ? (db.wastageCapsule ?? db.baseWastagePct) : (db.wastageTablet ?? db.baseWastagePct)) : null;
+        newActives.push({
+          key: key(), name: db?.name || mi.name, rmId: db?.rmId || "",
+          labelClaimMg: String(mi.amount || ""), activeContentPct: String(db?.activeContentPct ?? "100"),
+          overagePct: String(ov ?? "10"), wastagePct: String(wa ?? "3"),
+          costPerKg: String(db?.costPerKg ?? ""), supplier: db?.supplierName || "",
+          isEstimated: db?.isEstimatedPrice ?? true, isExcipient: false, inDb: !!db, dbId: db?.id || null,
+          aiCategory: mi.notes ? "Probiotics" : "Specialty", aiUnit: mi.unit, notes: mi.notes || undefined,
+        });
+      }
+      if (newActives.length > 0) setActiveLines(newActives);
+
+      const newExcipients: FormulaLine[] = [];
+      for (const me of matchedExcipients || []) {
+        const db = me.dbMatch;
+        newExcipients.push({
+          key: key(), name: db?.name || me.name, rmId: db?.rmId || "",
+          labelClaimMg: "", activeContentPct: String(db?.activeContentPct ?? "95"),
+          overagePct: "0", wastagePct: String(db?.baseWastagePct ?? "3"),
+          costPerKg: String(db?.costPerKg ?? ""), supplier: db?.supplierName || "",
+          isEstimated: db?.isEstimatedPrice ?? true, isExcipient: true, inDb: !!db, dbId: db?.id || null,
+        });
+      }
+      if (newExcipients.length > 0) setExcipientLines(newExcipients);
+    } catch {}
+  }, []);
+
+  // ─── Ingredient Search ──────────────────────────────────────────────
+
+  const doSearch = useCallback((q: string) => {
+    setSearchQuery(q);
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    if (q.length < 2) { setSearchResults([]); return; }
+    searchTimeout.current = setTimeout(async () => {
+      try { const res = await fetch(`/api/ingredients/search?q=${encodeURIComponent(q)}`); setSearchResults(await res.json()); } catch { setSearchResults([]); }
+    }, 200);
+  }, []);
+
+  const selectIngredient = (section: "active" | "excipient", idx: number, ing: any) => {
+    const ov = dosageForm === "capsule" ? ing.overageCapsule : ing.overageTablet;
+    const wa = dosageForm === "capsule" ? ing.wastageCapsule : ing.wastageTablet;
+    const updated: FormulaLine = {
+      key: key(), name: ing.name, rmId: ing.rmId, labelClaimMg: "",
+      activeContentPct: String(ing.activeContentPct ?? "100"), overagePct: String(ov || ing.baseOveragePct || "10"),
+      wastagePct: String(wa || ing.baseWastagePct || "3"), costPerKg: String(ing.costPerKg ?? ""),
+      supplier: ing.supplierName || "", isEstimated: ing.isEstimatedPrice,
+      isExcipient: section === "excipient", inDb: true, dbId: ing.id,
+    };
+    const lines = section === "active" ? [...activeLines] : [...excipientLines];
+    lines[idx] = updated;
+    section === "active" ? setActiveLines(lines) : setExcipientLines(lines);
+    setSearchIdx(null); setSearchResults([]); setSearchQuery("");
+  };
+
+  const updateLine = (s: "active" | "excipient", i: number, f: keyof FormulaLine, v: string | boolean) => {
+    const lines = s === "active" ? [...activeLines] : [...excipientLines];
+    lines[i] = { ...lines[i], [f]: v };
+    s === "active" ? setActiveLines(lines) : setExcipientLines(lines);
+  };
+
+  const removeLine = (s: "active" | "excipient", i: number) => {
+    if (s === "active") { if (activeLines.length <= 1) return; setActiveLines(activeLines.filter((_, j) => j !== i)); }
+    else { setExcipientLines(excipientLines.filter((_, j) => j !== i)); }
+  };
+
+  // ─── Cost Calc ──────────────────────────────────────────────────────
+
+  const allLines = useMemo(() => [...activeLines, ...excipientLines], [activeLines, excipientLines]);
+  const ssNum = parseInt(servingSize) || 1;
+  const ccNum = parseInt(countPerBottle) || 60;
+
+  const costs = useMemo(() => {
+    let rmPS = 0, fillMg = 0;
+    for (const l of allLines) {
+      if (!l.name.trim()) continue;
+      const lc = parseFloat(l.labelClaimMg) || 0, ac = parseFloat(l.activeContentPct) || 100;
+      const ov = parseFloat(l.overagePct) || 0, wa = parseFloat(l.wastagePct) || 0, c = parseFloat(l.costPerKg) || 0;
+      if (lc > 0 && ac > 0 && c > 0) {
+        const r = calculateIngredientCost({ name: l.name, labelClaimMg: lc, activeContentPct: ac, overagePct: ov, wastagePct: wa, costPerKg: c, isEstimatedPrice: l.isEstimated });
+        rmPS += r.costPerUnit; fillMg += r.finalMg;
+      }
+    }
+    const rm = rmPS * ccNum * ssNum;
+    const mfgC = bulkOrPackaged === "bulk" ? 0 : (mfg.blending + mfg.processing) * ccNum * ssNum + rm * (mfg.wastePct / 100);
+    const pkgC = bulkOrPackaged === "bulk" ? 0 : Object.values(pkg).reduce((s, v) => s + v, 0);
+    const oh = (rm + mfgC) * 0.15;
+    const cogs = rm + mfgC + pkgC + oh;
+    const tiers = DEFAULT_TIERS.map(t => {
+      const setup = mfg.setupPerBatch / t.quantity;
+      const tc = cogs + setup;
+      const price = tc / (1 - t.marginPct / 100);
+      return { quantity: t.quantity, marginPct: t.marginPct, price, total: price * t.quantity };
+    });
+    return { rm, mfgC, pkgC, oh, cogs, tiers, fillMg };
+  }, [allLines, mfg, pkg, ccNum, ssNum, bulkOrPackaged]);
+
+  const hasEst = allLines.some(l => l.isEstimated);
+
+  // ─── Save ──────────────────────────────────────────────────────────
+
+  const save = async () => {
     setSaving(true);
     try {
-      const tierData = TIERS.map((tier) => {
-        const setupAmortized = mfg.setupCostPerBatch / tier.quantity;
-        const totalCogs = cogsPerBottle + setupAmortized;
-        const price = totalCogs / (1 - tier.marginPct / 100);
-        return {
-          quantity: tier.quantity,
-          rawMaterialCost: totalRmPerBottle,
-          manufacturingCost: mfgPerBottle,
-          packagingCost: pkgPerBottle,
-          overheadCost: overheadPerBottle,
-          cogsPerUnit: totalCogs,
-          marginPct: tier.marginPct,
-          pricePerUnit: price,
-          totalBatchPrice: price * tier.quantity,
-        };
-      });
-
-      const res = await fetch("/api/quotes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          productName,
-          customerName,
-          dosageForm,
-          servingSize: servingSizeNum,
-          containerCount: containerCountNum,
-          tiers: tierData,
-          ingredients: lines.filter((l) => l.name.trim()).map((l) => ({
-            name: l.name,
-            rmId: l.rmId,
-            labelClaimMg: l.labelClaimMg,
-            activeContentPct: l.activeContentPct,
-            overagePct: l.overagePct,
-            wastagePct: l.wastagePct,
-            costPerKg: l.costPerKg,
-            finalMg: l.finalMg,
-            lineCost: l.lineCost,
-            isExcipient: l.isExcipient,
-            isEstimated: l.isEstimated,
-          })),
-          manufacturing: mfg,
-          packaging: pkg,
-          cogsPerBottle,
-          totalFillMg,
-        }),
-      });
-
-      const data = await res.json();
-      if (data.success) {
-        setSavedQuoteNumber(data.quoteNumber);
-      }
-    } catch (err) {
-      console.error("Save failed:", err);
-    } finally {
-      setSaving(false);
-    }
+      const body = { rfqNumber: rfqId, customerCompany, productName, dosageForm, servingSize, servingSizeUnit: dosageForm, servingsPerContainer: countPerBottle, countPerBottle, flavor, status: "Quoted", formulaJson: allLines.filter(l => l.name.trim()), otherIngredients: excipientLines.map(l => l.name).join(", ") };
+      if (dealId) { await fetch(`/api/deals/${dealId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); }
+      else { const res = await fetch("/api/deals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); const d = await res.json(); if (d.success) setDealId(d.deal.id); }
+      setSaved(true); setTimeout(() => setSaved(false), 3000);
+    } finally { setSaving(false); }
   };
 
-  // ─── Render ─────────────────────────────────────────────────────────────
+  const handleAddToDb = (ni: any) => {
+    if (!addToDbModal) return;
+    const { section: s, idx: i } = addToDbModal;
+    const lines = s === "active" ? [...activeLines] : [...excipientLines];
+    lines[i] = { ...lines[i], name: ni.name, rmId: ni.rmId, costPerKg: ni.costPerKg || "", activeContentPct: ni.activeContentPct || "100", supplier: ni.supplierName || "Unknown", isEstimated: true, inDb: true, dbId: ni.id };
+    s === "active" ? setActiveLines(lines) : setExcipientLines(lines);
+    setAddToDbModal(null);
+  };
+
+  // ─── Render ─────────────────────────────────────────────────────────
 
   return (
-    <div className="max-w-7xl pb-20">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Quote Builder</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          TM-style formulation costing — Part A (Raw Materials) → Part B (Manufacturing) → Part C (Packaging) → Pricing
-        </p>
-      </div>
+    <div className="flex gap-5 max-w-[1500px]">
+      {/* ═══ LEFT: Workspace ═══ */}
+      <div className="flex-1 min-w-0 space-y-3 pb-16">
 
-      {/* ── AI Intake: Drag & Drop ────────────────────────────────────── */}
-      <div
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={onDrop}
-        className={`relative mb-6 rounded-2xl border-2 border-dashed p-8 text-center transition-all cursor-pointer ${
-          dragOver
-            ? "border-[#d10a11] bg-red-50/50"
-            : extracting
-            ? "border-blue-300 bg-blue-50/30"
-            : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50/50"
-        }`}
-        onClick={() => !extracting && fileInputRef.current?.click()}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".pdf,.png,.jpg,.jpeg,.webp"
-          onChange={onFileSelect}
-          className="hidden"
-        />
-        {extracting ? (
-          <div className="flex flex-col items-center gap-3">
-            <div className="relative">
-              <Loader2 className="h-10 w-10 text-blue-500 animate-spin" />
-              <Sparkles className="h-4 w-4 text-blue-400 absolute -top-1 -right-1 animate-pulse" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-blue-700">AI is extracting the supplement facts panel...</p>
-              <p className="text-xs text-blue-500 mt-1">Identifying ingredients, dosages, and matching against 2,567 ingredients in our database</p>
-            </div>
+        {/* Product Header */}
+        <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="font-mono text-xs font-bold text-gray-400">{rfqId}</span>
+            {extractionFileName && <span className="text-[10px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">from {extractionFileName}</span>}
           </div>
-        ) : (
-          <div className="flex flex-col items-center gap-3">
-            <div className="flex items-center gap-2">
-              <div className="p-3 rounded-xl bg-gray-100">
-                <FileUp className="h-6 w-6 text-gray-400" />
-              </div>
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-gray-700">
-                Drop a Supplement Facts panel here
-              </p>
-              <p className="text-xs text-gray-400 mt-1">
-                PDF, PNG, or JPG — AI will extract all ingredients, dosages, and auto-build the formulation
-              </p>
-            </div>
-            <div className="flex items-center gap-4 mt-1">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 rounded-lg text-xs text-gray-500">
-                <Upload className="h-3 w-3" /> Upload file
-              </span>
-              <span className="text-xs text-gray-300">or drag & drop</span>
-            </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+            <div className="col-span-2"><label className="block text-[10px] font-medium text-gray-500 mb-1">Product Name</label><input value={productName} onChange={e => setProductName(e.target.value)} className="input-field text-sm font-semibold" placeholder="Bariatric Probiotic" /></div>
+            <div><label className="block text-[10px] font-medium text-gray-500 mb-1">Customer</label><input value={customerCompany} onChange={e => setCustomerCompany(e.target.value)} className="input-field text-sm" placeholder="BioSchwartz LLC" /></div>
+            <div><label className="block text-[10px] font-medium text-gray-500 mb-1">Flavor</label><input value={flavor} onChange={e => setFlavor(e.target.value)} className="input-field text-sm" placeholder="Cherry Strawberry" /></div>
           </div>
-        )}
-      </div>
-
-      {/* ── Step 0: Product Info ─────────────────────────────────────────── */}
-      <Section icon={FlaskConical} title="Product Information" step={0}>
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          <Field label="Product Name" span={2}>
-            <input value={productName} onChange={(e) => setProductName(e.target.value)} placeholder="e.g., Bariatric Probiotic 60ct" className="input-field" />
-          </Field>
-          <Field label="Customer">
-            <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="BioSchwartz LLC" className="input-field" />
-          </Field>
-          <Field label="Dosage Form">
-            <select value={dosageForm} onChange={(e) => setDosageForm(e.target.value as any)} className="input-field">
-              <option value="capsule">Capsule</option>
-              <option value="tablet">Tablet</option>
-            </select>
-          </Field>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Serving Size">
-              <input type="number" value={servingSize} onChange={(e) => setServingSize(e.target.value)} className="input-field" />
-            </Field>
-            <Field label="Count/Bottle">
-              <input type="number" value={containerCount} onChange={(e) => setContainerCount(e.target.value)} className="input-field" />
-            </Field>
+          <div className="grid grid-cols-5 gap-3">
+            <div><label className="block text-[10px] font-medium text-gray-500 mb-1">Format</label><select value={dosageForm} onChange={e => setDosageForm(e.target.value)} className="input-field text-xs"><option value="tablet">Tablet</option><option value="capsule">Capsule</option><option value="powder">Powder</option><option value="softgel">Softgel</option></select></div>
+            <div><label className="block text-[10px] font-medium text-gray-500 mb-1">Serving</label><input type="number" value={servingSize} onChange={e => setServingSize(e.target.value)} className="input-field text-xs" /></div>
+            <div><label className="block text-[10px] font-medium text-gray-500 mb-1">Count</label><input type="number" value={countPerBottle} onChange={e => setCountPerBottle(e.target.value)} className="input-field text-xs" /></div>
+            <div><label className="block text-[10px] font-medium text-gray-500 mb-1">MOQ</label><input type="number" value={moq} onChange={e => setMoq(e.target.value)} className="input-field text-xs" /></div>
+            <div><label className="block text-[10px] font-medium text-gray-500 mb-1">Delivery</label><select value={bulkOrPackaged} onChange={e => setBulkOrPackaged(e.target.value as any)} className="input-field text-xs"><option value="packaged">Packaged</option><option value="bulk">Bulk</option></select></div>
           </div>
         </div>
-      </Section>
 
-      {/* ── Part A: Raw Materials ────────────────────────────────────────── */}
-      <Section icon={FlaskConical} title="Part A — Raw Materials" step={1}>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-gray-50 border-b text-gray-600 font-medium">
-                <th className="text-left px-2 py-2.5 w-8">#</th>
-                <th className="text-left px-2 py-2.5 min-w-[200px]">Ingredient</th>
-                <th className="text-left px-2 py-2.5 w-20">RM ID</th>
-                <th className="text-right px-2 py-2.5 w-20">Label Claim</th>
-                <th className="text-right px-2 py-2.5 w-16">Active %</th>
-                <th className="text-right px-2 py-2.5 w-20">Adj. (mg)</th>
-                <th className="text-right px-2 py-2.5 w-16">Ov. %</th>
-                <th className="text-right px-2 py-2.5 w-20">Final (mg)</th>
-                <th className="text-right px-2 py-2.5 w-16">Waste %</th>
-                <th className="text-right px-2 py-2.5 w-20">Cost/Kg</th>
-                <th className="text-right px-2 py-2.5 w-16">Supplier</th>
-                <th className="text-right px-2 py-2.5 w-24">Line Cost</th>
-                <th className="text-center px-2 py-2.5 w-10">Est</th>
-                <th className="w-8"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {lines.map((line, i) => (
-                <tr key={line.key} className={`hover:bg-blue-50/30 transition-colors ${line.isExcipient ? "bg-gray-50/50" : ""}`}>
-                  <td className="px-2 py-1.5 text-gray-400 font-mono">{i + 1}</td>
-                  <td className="px-2 py-1.5 relative">
-                    {searchIndex === i ? (
-                      <div className="relative">
-                        <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-gray-400" />
-                        <input
-                          autoFocus
-                          value={searchQuery}
-                          onChange={(e) => doSearch(e.target.value)}
-                          onBlur={() => setTimeout(() => setSearchIndex(null), 200)}
-                          placeholder="Search ingredients..."
-                          className="input-field pl-7 text-xs"
-                        />
-                        {searchResults.length > 0 && (
-                          <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
-                            {searchResults.map((r) => (
-                              <button
-                                key={r.id}
-                                onMouseDown={() => selectIngredient(i, r)}
-                                className="w-full text-left px-3 py-2 hover:bg-blue-50 text-xs border-b border-gray-50 last:border-0"
-                              >
-                                <div className="font-medium text-gray-900">{r.name}</div>
-                                <div className="text-gray-500 flex gap-2 mt-0.5">
-                                  <span>{r.rmId}</span>
-                                  <span>•</span>
-                                  <span>{r.category}</span>
-                                  <span>•</span>
-                                  <span>${r.costPerKg}/kg</span>
-                                  <span>•</span>
-                                  <span>Active: {r.activeContentPct}%</span>
-                                  {r.isEstimatedPrice && <span className="text-amber-600">⚠ Est.</span>}
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => { setSearchIndex(i); setSearchQuery(line.name); }}
-                        className="w-full text-left text-xs px-2 py-1.5 rounded border border-transparent hover:border-gray-200 transition-colors"
-                      >
-                        {line.name || <span className="text-gray-400 italic">Click to search...</span>}
-                      </button>
-                    )}
-                  </td>
-                  <td className="px-2 py-1.5 font-mono text-gray-400 text-[10px]">{line.rmId}</td>
-                  <td className="px-2 py-1.5">
-                    <input type="number" value={line.labelClaimMg} onChange={(e) => updateLine(i, "labelClaimMg", e.target.value)} placeholder="mg" className="input-field text-right text-xs w-full" />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <input type="number" value={line.activeContentPct} onChange={(e) => updateLine(i, "activeContentPct", e.target.value)} className="input-field text-right text-xs w-full bg-blue-50/50" />
-                  </td>
-                  <td className="px-2 py-1.5 text-right font-mono text-gray-600">{line.adjustedMg ? line.adjustedMg.toFixed(1) : "—"}</td>
-                  <td className="px-2 py-1.5">
-                    <input type="number" value={line.overagePct} onChange={(e) => updateLine(i, "overagePct", e.target.value)} className="input-field text-right text-xs w-full" />
-                  </td>
-                  <td className="px-2 py-1.5 text-right font-mono font-medium text-gray-900">{line.finalMg ? line.finalMg.toFixed(1) : "—"}</td>
-                  <td className="px-2 py-1.5">
-                    <input type="number" value={line.wastagePct} onChange={(e) => updateLine(i, "wastagePct", e.target.value)} className="input-field text-right text-xs w-full" />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <input type="number" value={line.costPerKg} onChange={(e) => updateLine(i, "costPerKg", e.target.value)} className="input-field text-right text-xs w-full" />
-                  </td>
-                  <td className="px-2 py-1.5 text-[10px] text-gray-500 truncate max-w-[80px]">{line.supplier}</td>
-                  <td className="px-2 py-1.5 text-right font-mono text-sm font-semibold text-gray-900">
-                    {line.lineCost > 0 ? "$" + line.lineCost.toFixed(5) : "—"}
-                  </td>
-                  <td className="px-2 py-1.5 text-center">
-                    {line.isEstimated && <span className="inline-block w-2 h-2 rounded-full bg-amber-400" title="Estimated price" />}
-                  </td>
-                  <td className="px-1 py-1.5">
-                    <button onClick={() => removeLine(i)} disabled={lines.length <= 1} className="p-1 text-gray-300 hover:text-red-500 disabled:opacity-20 transition-colors">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            {calculated && (
-              <tfoot>
-                <tr className="bg-gray-50 border-t-2 border-gray-300 font-semibold text-xs">
-                  <td colSpan={7} className="px-2 py-2.5 text-right">Total Fill Weight per Serving:</td>
-                  <td className="px-2 py-2.5 text-right font-mono">{totalFillMg.toFixed(1)} mg</td>
-                  <td colSpan={3} className="px-2 py-2.5 text-right">Total RM per Serving:</td>
-                  <td className="px-2 py-2.5 text-right font-mono text-[#d10a11]">${totalRmPerServing.toFixed(5)}</td>
-                  <td colSpan={2}></td>
-                </tr>
-              </tfoot>
-            )}
-          </table>
-        </div>
-        <div className="mt-3 flex gap-2">
-          <button onClick={addLine} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-[#d10a11] bg-red-50 rounded-lg hover:bg-red-100 transition-colors">
-            <Plus className="h-3.5 w-3.5" /> Add Ingredient
-          </button>
-        </div>
-      </Section>
-
-      {/* ── Part B: Manufacturing Costs ──────────────────────────────────── */}
-      <Section icon={Factory} title="Part B — Manufacturing Costs" step={2}>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Field label="Blending Labor / Unit">
-            <input type="number" step="0.001" value={mfg.blendingLaborPerUnit} onChange={(e) => setMfg({ ...mfg, blendingLaborPerUnit: parseFloat(e.target.value) || 0 })} className="input-field text-right" />
-          </Field>
-          <Field label={dosageForm === "capsule" ? "Encapsulation / Unit" : "Compression / Unit"}>
-            <input type="number" step="0.001" value={mfg.compressionOrEncapPerUnit} onChange={(e) => setMfg({ ...mfg, compressionOrEncapPerUnit: parseFloat(e.target.value) || 0 })} className="input-field text-right" />
-          </Field>
-          <Field label="Production Waste %">
-            <input type="number" step="0.1" value={mfg.productionWastePct} onChange={(e) => setMfg({ ...mfg, productionWastePct: parseFloat(e.target.value) || 0 })} className="input-field text-right" />
-          </Field>
-          <Field label="Setup Cost / Batch">
-            <input type="number" value={mfg.setupCostPerBatch} onChange={(e) => setMfg({ ...mfg, setupCostPerBatch: parseFloat(e.target.value) || 0 })} className="input-field text-right" />
-          </Field>
-        </div>
-        {calculated && (
-          <div className="mt-4 p-3 bg-gray-50 rounded-lg text-sm">
-            <span className="text-gray-600">Mfg. Cost per Bottle:</span>{" "}
-            <span className="font-mono font-semibold">${mfgPerBottle.toFixed(4)}</span>
+        {/* Active Ingredients */}
+        <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-xs font-semibold text-gray-900 flex items-center gap-1.5"><FlaskConical className="h-3.5 w-3.5 text-blue-500" /> Active Ingredients</h2>
+            <button onClick={() => setActiveLines([...activeLines, emptyLine(false)])} className="text-[10px] text-[#d10a11] font-medium hover:underline flex items-center gap-0.5"><Plus className="h-3 w-3" /> Add</button>
           </div>
-        )}
-      </Section>
-
-      {/* ── Part C: Packaging Costs ──────────────────────────────────────── */}
-      <Section icon={Package} title="Part C — Packaging Costs" step={3}>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {pkg.map((p, i) => (
-            <Field key={i} label={p.name}>
-              <input
-                type="number"
-                step="0.001"
-                value={p.costPerBottle}
-                onChange={(e) => {
-                  const updated = [...pkg];
-                  updated[i] = { ...updated[i], costPerBottle: parseFloat(e.target.value) || 0 };
-                  setPkg(updated);
-                }}
-                className="input-field text-right"
-              />
-            </Field>
-          ))}
+          <IngTable lines={activeLines} section="active" exc={false} si={searchIdx} sq={searchQuery} sr={searchResults}
+            onS={(i: number) => { setSearchIdx({ section: "active", idx: i }); setSearchQuery(activeLines[i]?.name || ""); }}
+            onDS={doSearch} onSel={selectIngredient} onUp={updateLine} onRm={removeLine}
+            onAdd={(i: number) => setAddToDbModal({ line: activeLines[i], section: "active", idx: i })}
+            onCS={() => { setSearchIdx(null); setSearchResults([]); }} />
         </div>
-        {calculated && (
-          <div className="mt-4 p-3 bg-gray-50 rounded-lg text-sm">
-            <span className="text-gray-600">Packaging Cost per Bottle:</span>{" "}
-            <span className="font-mono font-semibold">${pkgPerBottle.toFixed(4)}</span>
+
+        {/* Excipients */}
+        <div className="bg-gray-50/80 rounded-2xl border border-gray-200 p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-xs font-semibold text-gray-600 flex items-center gap-1.5"><FlaskConical className="h-3.5 w-3.5 text-gray-400" /> Excipients</h2>
+            <button onClick={() => setExcipientLines([...excipientLines, emptyLine(true)])} className="text-[10px] text-gray-500 font-medium hover:underline flex items-center gap-0.5"><Plus className="h-3 w-3" /> Add</button>
           </div>
-        )}
-      </Section>
-
-      {/* ── Errors ───────────────────────────────────────────────────────── */}
-      {errors.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              {errors.map((err, i) => (
-                <p key={i} className="text-sm text-amber-700">{err}</p>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Calculate Button ─────────────────────────────────────────────── */}
-      <div className="flex gap-3 mb-8">
-        <button onClick={calculate} className="inline-flex items-center gap-2 px-6 py-3 bg-[#d10a11] text-white font-semibold rounded-xl hover:bg-[#a30a0f] transition-colors shadow-sm">
-          <Calculator className="h-5 w-5" /> Calculate Quote
-        </button>
-      </div>
-
-      {/* ── Results ──────────────────────────────────────────────────────── */}
-      {calculated && (
-        <>
-          {/* Capsule Sizing */}
-          {capsuleResult && (
-            <div className={`rounded-xl border p-4 mb-6 ${capsuleResult.feasible ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
-              <h3 className="font-semibold text-sm mb-1">{capsuleResult.feasible ? "✓ Capsule Sizing" : "✗ Sizing Issue"}</h3>
-              <p className="text-sm">{capsuleResult.recommendation}</p>
-              {capsuleResult.warnings.map((w, i) => (
-                <p key={i} className="text-xs text-amber-600 mt-1">{w}</p>
-              ))}
-            </div>
+          {excipientLines.length === 0 ? <p className="text-[10px] text-gray-400 italic py-1">No excipients. Upload an SFP or add manually.</p> : (
+            <IngTable lines={excipientLines} section="excipient" exc={true} si={searchIdx} sq={searchQuery} sr={searchResults}
+              onS={(i: number) => { setSearchIdx({ section: "excipient", idx: i }); setSearchQuery(excipientLines[i]?.name || ""); }}
+              onDS={doSearch} onSel={selectIngredient} onUp={updateLine} onRm={removeLine}
+              onAdd={(i: number) => setAddToDbModal({ line: excipientLines[i], section: "excipient", idx: i })}
+              onCS={() => { setSearchIdx(null); setSearchResults([]); }} />
           )}
+        </div>
 
-          {/* COGS Summary */}
-          <Section icon={DollarSign} title="COGS Summary (per Bottle)" step={4}>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              <CostCard label="Part A — Raw Materials" value={totalRmPerBottle} color="blue" />
-              <CostCard label="Part B — Manufacturing" value={mfgPerBottle} color="purple" />
-              <CostCard label="Part C — Packaging" value={pkgPerBottle} color="green" />
-              <CostCard label="Overhead (15%)" value={overheadPerBottle} color="orange" />
-              <CostCard label="Total COGS" value={cogsPerBottle} color="red" highlight />
+        {/* Manufacturing */}
+        {bulkOrPackaged === "packaged" && (
+          <Coll title="Manufacturing" icon={Factory} open={mfgOpen} toggle={() => setMfgOpen(!mfgOpen)} sub={fmtCost(costs.mfgC) + "/btl"}>
+            <div className="grid grid-cols-4 gap-3 text-xs">
+              <NF label="Blending/Unit" v={mfg.blending} set={v => setMfg({ ...mfg, blending: v })} />
+              <NF label={mfg.processingLabel} v={mfg.processing} set={v => setMfg({ ...mfg, processing: v })} />
+              <NF label="Waste %" v={mfg.wastePct} set={v => setMfg({ ...mfg, wastePct: v })} />
+              <NF label="Setup/Batch" v={mfg.setupPerBatch} set={v => setMfg({ ...mfg, setupPerBatch: v })} />
             </div>
-          </Section>
+          </Coll>
+        )}
 
-          {/* Tiered Pricing */}
-          <Section icon={DollarSign} title="Tiered Pricing" step={5}>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              {TIERS.map((tier, i) => {
-                const setupAmortized = mfg.setupCostPerBatch / tier.quantity;
-                const totalCogs = cogsPerBottle + setupAmortized;
-                const price = totalCogs / (1 - tier.marginPct / 100);
-                const batchTotal = price * tier.quantity;
+        {/* Packaging */}
+        {bulkOrPackaged === "packaged" && (
+          <Coll title="Packaging" icon={Package} open={pkgOpen} toggle={() => setPkgOpen(!pkgOpen)} sub={fmtCost(costs.pkgC) + "/btl"}>
+            <div className="mb-3">
+              <select value={pkgPreset} onChange={e => { setPkgPreset(e.target.value); const p = PKG_PRESETS.find(p => p.name === e.target.value); if (p) setPkg(p.values); }} className="input-field text-xs w-56">
+                {PKG_PRESETS.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
+                <option value="Custom">Custom</option>
+              </select>
+            </div>
+            <div className="grid grid-cols-4 gap-3 text-xs">
+              {Object.entries(pkg).map(([k, v]) => <NF key={k} label={PKG_LABELS[k] || k} v={v} set={val => { setPkg({ ...pkg, [k]: val }); setPkgPreset("Custom"); }} />)}
+            </div>
+          </Coll>
+        )}
+      </div>
 
-                return (
-                  <div key={i} className={`relative border rounded-2xl p-6 transition-shadow hover:shadow-lg ${i === 1 ? "border-[#d10a11] ring-2 ring-[#d10a11]/10" : "border-gray-200"}`}>
-                    {i === 1 && (
-                      <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-[#d10a11] text-white text-[10px] font-bold rounded-full uppercase tracking-wider">
-                        Recommended
-                      </span>
-                    )}
-                    <div className="text-center mb-5">
-                      <p className="text-3xl font-bold text-gray-900">{tier.quantity.toLocaleString()}</p>
-                      <p className="text-xs text-gray-500 uppercase tracking-wider mt-1">bottles</p>
+      {/* ═══ RIGHT: Cost Panel ═══ */}
+      <div className="w-72 shrink-0 hidden lg:block">
+        <div className="sticky top-5 space-y-3">
+          <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
+            <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-3">Cost / {bulkOrPackaged === "bulk" ? "Kg" : "Bottle"}</h3>
+            <div className="space-y-1.5 text-xs">
+              <CR l="Raw Materials" v={costs.rm} />
+              {bulkOrPackaged === "packaged" && <CR l="Manufacturing" v={costs.mfgC} />}
+              {bulkOrPackaged === "packaged" && <CR l="Packaging" v={costs.pkgC} />}
+              <CR l="Overhead (15%)" v={costs.oh} m />
+              <div className="border-t pt-1.5 mt-1.5"><CR l="COGS" v={costs.cogs} b /></div>
+            </div>
+            <div className="mt-2 text-[10px] text-gray-400">{allLines.filter(l => l.name.trim()).length} ingredients &middot; {costs.fillMg > 0 ? `${costs.fillMg.toFixed(0)}mg fill` : "—"}</div>
+          </div>
+
+          {costs.cogs > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
+              <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-3">Tiered Pricing</h3>
+              <div className="space-y-2">
+                {costs.tiers.map((t, i) => (
+                  <div key={t.quantity} className={`p-2.5 rounded-xl border ${i === 1 ? "border-[#d10a11] bg-red-50/30" : "border-gray-100"}`}>
+                    <div className="flex justify-between items-center mb-0.5">
+                      <span className="text-xs font-bold text-gray-900">{t.quantity.toLocaleString()}</span>
+                      {i === 1 && <span className="text-[8px] font-bold text-[#d10a11] uppercase">Best</span>}
                     </div>
-                    <div className="space-y-2 text-sm">
-                      <Row label="COGS/Bottle" value={`$${totalCogs.toFixed(2)}`} />
-                      <Row label="Setup (amortized)" value={`$${setupAmortized.toFixed(4)}`} muted />
-                      <Row label="Margin" value={`${tier.marginPct}%`} />
-                      <div className="border-t pt-3 mt-3">
-                        <Row label="Price/Bottle" value={`$${price.toFixed(2)}`} bold accent />
-                      </div>
-                      <div className="bg-gray-50 -mx-6 -mb-6 px-6 py-4 rounded-b-2xl mt-4">
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-600 font-medium">Batch Total</span>
-                          <span className="text-xl font-bold text-gray-900">${batchTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                        </div>
-                      </div>
-                    </div>
+                    <div className="flex justify-between text-[10px]"><span className="text-gray-500">{t.marginPct}%</span><span className="font-mono font-bold">{fmtCost(t.price)}/btl</span></div>
+                    <div className="text-right text-[9px] text-gray-400">${t.total.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
                   </div>
-                );
-              })}
-            </div>
-          </Section>
-
-          {/* Estimated Warning */}
-          {hasEstimated && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold text-amber-800">Estimated Pricing Warning</p>
-                  <p className="text-sm text-amber-700 mt-1">
-                    {lines.filter((l) => l.isEstimated).length} ingredient(s) use Internal Database prices (marked with ⚠).
-                    Verify with real supplier quotes before sending to customer.
-                  </p>
-                </div>
+                ))}
               </div>
             </div>
           )}
 
-          {/* Save / Success */}
-          <div className="flex items-center gap-4 mt-2">
-            {!savedQuoteNumber ? (
-              <button
-                onClick={saveQuote}
-                disabled={saving}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-gray-900 text-white font-semibold rounded-xl hover:bg-gray-800 transition-colors shadow-sm disabled:opacity-50"
-              >
-                {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Save className="h-5 w-5" />}
-                {saving ? "Saving..." : "Save Quote"}
-              </button>
-            ) : (
-              <div className="flex items-center gap-3 px-5 py-3 bg-green-50 border border-green-200 rounded-xl">
-                <Check className="h-5 w-5 text-green-600" />
-                <div>
-                  <p className="text-sm font-semibold text-green-800">Quote saved: {savedQuoteNumber}</p>
-                  <button onClick={() => router.push("/quotes")} className="text-xs text-green-600 hover:underline mt-0.5">
-                    View all quotes →
-                  </button>
-                </div>
-              </div>
-            )}
+          {hasEst && <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2"><p className="text-[10px] font-semibold text-amber-700">Estimated prices — verify with suppliers</p></div>}
+
+          <div className="space-y-2">
+            <button onClick={save} disabled={saving} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#d10a11] text-white font-semibold rounded-xl hover:bg-[#a30a0f] disabled:opacity-50 text-sm">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : saved ? <CheckCircle2 className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+              {saving ? "Saving..." : saved ? "Saved!" : "Save Quote"}
+            </button>
+            {dealId && <a href={`/api/quotes/${dealId}/pdf`} target="_blank" className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-900 text-white font-medium rounded-xl hover:bg-gray-800 text-sm"><FileDown className="h-4 w-4" /> PDF</a>}
           </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ─── Sub-Components ───────────────────────────────────────────────────────
-
-function Section({ icon: Icon, title, step, children }: { icon: any; title: string; step: number; children: React.ReactNode }) {
-  return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-6 shadow-sm">
-      <div className="flex items-center gap-3 mb-5">
-        <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-gray-100 text-gray-500">
-          <Icon className="h-4 w-4" />
         </div>
-        <h2 className="text-base font-semibold text-gray-900">{title}</h2>
       </div>
-      {children}
+
+      {/* ═══ Eva FAB ═══ */}
+      <button onClick={() => setShowEva(!showEva)} className={`fixed bottom-6 right-6 z-50 p-3.5 rounded-full shadow-lg ${showEva ? "bg-gray-800 text-white" : "bg-[#d10a11] text-white hover:bg-[#a30a0f]"}`}>
+        {showEva ? <X className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
+      </button>
+      {showEva && (
+        <div className="fixed bottom-20 right-6 z-50 w-[400px]">
+          <EvaChat context={{ productName, dosageForm, servingSize, servingsPerContainer: countPerBottle, moq, bulkOrPackaged,
+            ingredientNames: allLines.filter(l => l.name.trim()).map(l => l.name),
+            activeIngredients: activeLines.filter(l => l.name.trim()).map(l => ({ name: l.name, amount: parseFloat(l.labelClaimMg) || 0, unit: "mg", notes: l.notes, inDb: l.inDb })),
+            excipients: excipientLines.filter(l => l.name.trim()).map(l => l.name) }} />
+        </div>
+      )}
+
+      {addToDbModal && <AddToDbModal ingredientName={addToDbModal.line.name} suggestedCategory={addToDbModal.line.aiCategory} onSave={handleAddToDb} onClose={() => setAddToDbModal(null)} />}
     </div>
   );
 }
 
-function Field({ label, children, span }: { label: string; children: React.ReactNode; span?: number }) {
+// ─── Sub-Components ─────────────────────────────────────────────────────
+
+function IngTable({ lines, section, exc, si, sq, sr, onS, onDS, onSel, onUp, onRm, onAdd, onCS }: any) {
   return (
-    <div className={span ? `col-span-${span}` : ""}>
-      <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
-      {children}
+    <div className="overflow-x-auto">
+      <table className="w-full text-[11px]">
+        <thead><tr className="text-gray-400 font-medium border-b text-[10px]">
+          <th className="text-left px-1 py-1.5 w-5">#</th><th className="text-left px-1 py-1.5 min-w-[180px]">Ingredient</th>
+          {!exc && <th className="text-right px-1 py-1.5 w-16">Label mg</th>}{!exc && <th className="text-right px-1 py-1.5 w-14">Active%</th>}
+          <th className="text-right px-1 py-1.5 w-12">Ov%</th><th className="text-right px-1 py-1.5 w-12">Wa%</th>
+          <th className="text-right px-1 py-1.5 w-16">$/Kg</th><th className="text-left px-1 py-1.5 w-20">Supplier</th><th className="w-5"></th>
+        </tr></thead>
+        <tbody>{lines.map((l: FormulaLine, i: number) => {
+          const isSrch = si?.section === section && si?.idx === i;
+          const noDb = !l.inDb && l.name.trim().length > 0;
+          return (
+            <tr key={l.key} className={`border-b border-gray-50 ${noDb ? "bg-red-50 border-l-2 border-l-red-400" : ""}`}>
+              <td className="px-1 py-1 text-gray-300 text-center">{i + 1}</td>
+              <td className="px-1 py-1 relative">{isSrch ? (
+                <div className="relative">
+                  <input autoFocus value={sq} onChange={e => onDS(e.target.value)} onBlur={() => setTimeout(onCS, 200)} className="input-field text-[11px] py-1 pl-6 w-full" placeholder="Search..." />
+                  <Search className="absolute left-2 top-1.5 h-3 w-3 text-gray-400" />
+                  {sr.length > 0 && <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                    {sr.map((r: any) => <button key={r.id} onMouseDown={() => onSel(section, i, r)} className="w-full text-left px-3 py-2 hover:bg-blue-50 text-[11px] border-b border-gray-50">
+                      <div className="flex justify-between"><span className="font-medium">{r.name}</span><span className="font-mono text-gray-400">${r.costPerKg}/kg</span></div>
+                      <div className="text-[9px] text-gray-400 mt-0.5">{r.rmId} &middot; Active {r.activeContentPct}%</div>
+                    </button>)}
+                  </div>}
+                </div>
+              ) : (
+                <div className="flex items-center gap-1">
+                  {l.inDb && l.name.trim() && <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />}
+                  {noDb && <XCircle className="h-3 w-3 text-red-500 shrink-0" />}
+                  <button onClick={() => onS(i)} className="text-left text-[11px] hover:bg-gray-50 rounded px-1 py-0.5 flex-1 truncate">{l.name || <span className="text-gray-300 italic">Search...</span>}</button>
+                  {l.rmId && <span className="text-[8px] text-gray-300 font-mono">{l.rmId}</span>}
+                  {noDb && <button onClick={() => onAdd(i)} className="shrink-0 px-1.5 py-0.5 bg-red-600 text-white text-[8px] font-bold rounded hover:bg-red-700">+DB</button>}
+                </div>
+              )}</td>
+              {!exc && <td className="px-1 py-1"><input type="number" value={l.labelClaimMg} onChange={e => onUp(section, i, "labelClaimMg", e.target.value)} className="input-field text-[11px] py-0.5 text-right w-full" placeholder="0" /></td>}
+              {!exc && <td className="px-1 py-1"><input type="number" value={l.activeContentPct} onChange={e => onUp(section, i, "activeContentPct", e.target.value)} className="input-field text-[11px] py-0.5 text-right w-full bg-blue-50/30" placeholder="100" /></td>}
+              <td className="px-1 py-1"><input type="number" value={l.overagePct} onChange={e => onUp(section, i, "overagePct", e.target.value)} className="input-field text-[11px] py-0.5 text-right w-full" placeholder="0" /></td>
+              <td className="px-1 py-1"><input type="number" value={l.wastagePct} onChange={e => onUp(section, i, "wastagePct", e.target.value)} className="input-field text-[11px] py-0.5 text-right w-full" placeholder="3" /></td>
+              <td className="px-1 py-1"><input type="number" value={l.costPerKg} onChange={e => onUp(section, i, "costPerKg", e.target.value)} className="input-field text-[11px] py-0.5 text-right w-full font-mono" placeholder="0" /></td>
+              <td className="px-1 py-1 text-[9px] text-gray-400 truncate max-w-[80px]" title={l.supplier}>{l.supplier || "—"}</td>
+              <td className="px-1 py-1"><button onClick={() => onRm(section, i)} className="p-0.5 text-gray-200 hover:text-red-500"><Trash2 className="h-3 w-3" /></button></td>
+            </tr>
+          );
+        })}</tbody>
+      </table>
     </div>
   );
 }
 
-function CostCard({ label, value, color, highlight }: { label: string; value: number; color: string; highlight?: boolean }) {
-  const colors: Record<string, string> = {
-    blue: "bg-blue-50 border-blue-100",
-    purple: "bg-purple-50 border-purple-100",
-    green: "bg-green-50 border-green-100",
-    orange: "bg-orange-50 border-orange-100",
-    red: highlight ? "bg-[#d10a11] border-[#d10a11] text-white" : "bg-red-50 border-red-100",
-  };
+function Coll({ title, icon: Icon, open, toggle, sub, children }: any) {
   return (
-    <div className={`rounded-xl border p-4 ${colors[color]}`}>
-      <p className={`text-xs font-medium ${highlight ? "text-white/80" : "text-gray-500"}`}>{label}</p>
-      <p className={`text-lg font-bold font-mono mt-1 ${highlight ? "text-white" : "text-gray-900"}`}>${value.toFixed(4)}</p>
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+      <button onClick={toggle} className="w-full flex items-center justify-between p-3 hover:bg-gray-50">
+        <div className="flex items-center gap-1.5"><Icon className="h-3.5 w-3.5 text-gray-400" /><span className="text-xs font-semibold text-gray-900">{title}</span>{sub && !open && <span className="text-[10px] text-gray-400 ml-1">{sub}</span>}</div>
+        {open ? <ChevronDown className="h-3.5 w-3.5 text-gray-400" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
+      </button>
+      {open && <div className="px-3 pb-3">{children}</div>}
     </div>
   );
 }
 
-function Row({ label, value, bold, muted, accent }: { label: string; value: string; bold?: boolean; muted?: boolean; accent?: boolean }) {
-  return (
-    <div className="flex justify-between">
-      <span className={`${muted ? "text-gray-400" : "text-gray-600"} ${bold ? "font-medium" : ""}`}>{label}</span>
-      <span className={`font-mono ${bold ? "font-bold" : ""} ${accent ? "text-[#d10a11]" : ""} ${muted ? "text-gray-400" : ""}`}>{value}</span>
-    </div>
-  );
+function NF({ label, v, set }: { label: string; v: number; set: (v: number) => void }) {
+  return <div><label className="block text-[10px] font-medium text-gray-500 mb-1">{label}</label><input type="number" value={v} onChange={e => set(parseFloat(e.target.value) || 0)} className="input-field text-xs py-1" /></div>;
 }
 
-function round(v: number, d = 2): number {
-  const f = Math.pow(10, d);
-  return Math.round(v * f) / f;
+function CR({ l, v, b, m }: { l: string; v: number; b?: boolean; m?: boolean }) {
+  const f = v === 0 ? "$0.00" : v < 0.01 ? `$${v.toFixed(4)}` : `$${v.toFixed(2)}`;
+  return <div className="flex justify-between items-center"><span className={`${m ? "text-gray-400" : "text-gray-600"} ${b ? "font-semibold" : ""}`}>{l}</span><span className={`font-mono whitespace-nowrap ${b ? "font-bold text-[#d10a11] text-sm" : ""} ${m ? "text-gray-400" : ""}`}>{f}</span></div>;
 }
