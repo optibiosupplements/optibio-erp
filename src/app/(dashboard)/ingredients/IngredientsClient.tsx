@@ -159,7 +159,7 @@ export default function IngredientsClient({
             </thead>
             <tbody className="divide-y divide-gray-100">
               {ingredients.map((ing) => (
-                <tr key={ing.id} className="hover:bg-gray-50/50 transition-colors">
+                <tr key={ing.id} className="hover:bg-gray-50/50 transition-colors cursor-pointer" onClick={() => editingId !== ing.id && router.push(`/ingredients/${ing.id}`)}>
                   <td className="px-4 py-3 font-mono text-xs text-gray-500">{ing.rmId}</td>
                   <td className="px-4 py-3 font-medium text-gray-900 text-sm">{ing.name}</td>
 
