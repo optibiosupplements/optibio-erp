@@ -224,6 +224,75 @@ export const formulationPackaging = pgTable("formulation_packaging", {
 });
 
 // ============================================================================
+// RFQ / INTAKE TABLES
+// ============================================================================
+
+export const rfqs = pgTable("rfqs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  rfqNumber: text("rfq_number").unique().notNull(),
+  status: text("status").notNull().default("New"),
+  priority: text("priority").notNull().default("Normal"),
+  source: text("source").notNull().default("Email"),
+
+  // Section 1: Customer
+  customerId: uuid("customer_id").references(() => customers.id),
+  customerCompany: text("customer_company"),
+  customerContact: text("customer_contact"),
+  customerEmail: text("customer_email"),
+  customerPhone: text("customer_phone"),
+
+  // Section 2: Product Specification
+  productName: text("product_name"),
+  dosageForm: text("dosage_form"),
+  servingSize: integer("serving_size"),
+  servingSizeUnit: text("serving_size_unit"),
+  servingsPerContainer: integer("servings_per_container"),
+  countPerBottle: integer("count_per_bottle"),
+  flavor: text("flavor"),
+  targetRetailPrice: numeric("target_retail_price", { precision: 10, scale: 2 }),
+
+  // Section 3: Formula (JSON — extracted ingredients)
+  formulaJson: text("formula_json"),
+  otherIngredients: text("other_ingredients"),
+  specialRequirements: text("special_requirements"),
+
+  // Section 4: Packaging
+  bulkOrPackaged: text("bulk_or_packaged").default("Packaged"),
+  primaryPackaging: text("primary_packaging"),
+  capsuleType: text("capsule_type"),
+  capsuleSize: text("capsule_size"),
+  secondaryPackaging: text("secondary_packaging"),
+  labelStatus: text("label_status"),
+
+  // Section 5: Regulatory
+  certifications: text("certifications"),
+  targetMarkets: text("target_markets"),
+  allergenStatement: text("allergen_statement"),
+  claims: text("claims"),
+
+  // Section 6: Manufacturing
+  moq: integer("moq"),
+  targetTimeline: text("target_timeline"),
+  coPackerPreference: text("co_packer_preference"),
+
+  // Section 7: Attachments & Notes
+  attachmentUrls: text("attachment_urls"),
+  internalNotes: text("internal_notes"),
+  customerNotes: text("customer_notes"),
+
+  // Linked records
+  formulationId: uuid("formulation_id").references(() => formulations.id),
+  quoteId: uuid("quote_id").references(() => quotes.id),
+
+  // Meta
+  version: integer("version").notNull().default(1),
+  deadline: date("deadline"),
+  assignedTo: text("assigned_to"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ============================================================================
 // MANUFACTURING TABLES
 // ============================================================================
 

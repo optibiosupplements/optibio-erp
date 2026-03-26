@@ -11,10 +11,12 @@ import {
   Kanban,
   Package,
   Settings,
+  ClipboardList,
 } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/intake", label: "RFQ Intake", icon: ClipboardList },
   { href: "/quotes", label: "Quotes", icon: FileText },
   { href: "/formulations", label: "Formulations", icon: FlaskConical },
   { href: "/ingredients", label: "Ingredients", icon: Pill },
