@@ -17,14 +17,11 @@ import {
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/intake", label: "RFQ Intake", icon: ClipboardList },
-  { href: "/quotes", label: "Quotes", icon: FileText },
-  { href: "/formulations", label: "Formulations", icon: FlaskConical },
+  { href: "/deals", label: "Deals", icon: ClipboardList },
   { href: "/ingredients", label: "Ingredients", icon: Pill },
   { href: "/suppliers", label: "Suppliers", icon: Truck },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/pipeline", label: "Pipeline", icon: Kanban },
-  { href: "/packaging", label: "Packaging", icon: Package },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
