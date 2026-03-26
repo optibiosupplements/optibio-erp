@@ -130,12 +130,18 @@ export default function CostSummaryPanel({
   );
 }
 
+function formatCost(value: number): string {
+  if (value === 0) return "$0.00";
+  if (value < 0.01) return `$${value.toFixed(4)}`;
+  return `$${value.toFixed(2)}`;
+}
+
 function CostRow({ label, value, bold, muted }: { label: string; value: number; bold?: boolean; muted?: boolean }) {
   return (
-    <div className="flex justify-between">
+    <div className="flex justify-between items-center">
       <span className={`${muted ? "text-gray-400" : "text-gray-600"} ${bold ? "font-semibold" : ""}`}>{label}</span>
-      <span className={`font-mono ${bold ? "font-bold text-[#d10a11]" : ""} ${muted ? "text-gray-400" : ""}`}>
-        ${value.toFixed(value >= 1 ? 2 : 4)}
+      <span className={`font-mono whitespace-nowrap ${bold ? "font-bold text-[#d10a11] text-base" : "text-sm"} ${muted ? "text-gray-400" : ""}`}>
+        {formatCost(value)}
       </span>
     </div>
   );

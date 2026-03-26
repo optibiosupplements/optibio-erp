@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   FileUp, Upload, Loader2, Sparkles, Plus, Trash2, Search,
   ChevronDown, ChevronRight, FlaskConical, Factory, Package,
-  Shield, MessageSquare, Calculator,
+  Shield, MessageSquare, Calculator, AlertTriangle, CheckCircle2, XCircle,
 } from "lucide-react";
 import CostSummaryPanel from "@/components/deal/CostSummaryPanel";
 import AddToDbModal from "@/components/deal/AddToDbModal";
@@ -76,6 +76,22 @@ export default function DealWorkbench() {
   const [allergenStatement, setAllergenStatement] = useState("");
   const [internalNotes, setInternalNotes] = useState("");
   const [customerNotes, setCustomerNotes] = useState("");
+
+  // Extraction summary
+  const [extractionSummary, setExtractionSummary] = useState<{
+    fileName: string;
+    productName: string;
+    dosageForm: string;
+    servingSize: number;
+    servingsPerContainer: number;
+    flavor: string | null;
+    allergen: string | null;
+    activeCount: number;
+    activeMatched: number;
+    excipientCount: number;
+    excipientMatched: number;
+    brandedIngredients: string[];
+  } | null>(null);
 
   // UI state
   const [extracting, setExtracting] = useState(false);
@@ -208,32 +224,39 @@ export default function DealWorkbench() {
       if (!data.success) { setExtracting(false); return; }
       const ext = data.extracted;
 
+      // Determine dosage form for overage/wastage column selection
+      const form = (ext.dosageForm || "tablet").toLowerCase();
+
       // Fill product info
       if (ext.productName) setProductName(ext.productName);
-      if (ext.dosageForm) setDosageForm(ext.dosageForm.toLowerCase());
+      if (form) setDosageForm(form);
       if (ext.servingSize) setServingSize(String(ext.servingSize));
       if (ext.servingsPerContainer) setContainerCount(String(ext.servingsPerContainer));
       if (ext.flavor) setFlavor(ext.flavor);
       if (ext.allergenInfo) setAllergenStatement(ext.allergenInfo);
 
-      // Build active ingredient lines
+      // Build active ingredient lines with proper DB field mapping
       const newActives: FormulaLine[] = [];
+      let activeMatched = 0;
       for (const mi of data.matchedIngredients || []) {
         const db = mi.dbMatch;
-        const ov = db ? (dosageForm === "capsule" ? db.overageCapsule : db.overageTablet) : null;
-        const wa = db ? (dosageForm === "capsule" ? db.wastageCapsule : db.wastageTablet) : null;
+        if (db) activeMatched++;
+
+        // Select dosage-form-specific overage/wastage, with fallbacks
+        const ov = db ? (form === "capsule" ? (db.overageCapsule ?? db.baseOveragePct) : (db.overageTablet ?? db.baseOveragePct)) : null;
+        const wa = db ? (form === "capsule" ? (db.wastageCapsule ?? db.baseWastagePct) : (db.wastageTablet ?? db.baseWastagePct)) : null;
 
         newActives.push({
           key: key(),
           name: db?.name || mi.name,
           rmId: db?.rmId || "",
           labelClaimMg: String(mi.amount || ""),
-          activeContentPct: db?.activeContentPct || "100",
-          overagePct: ov || db?.baseOveragePct || "10",
-          wastagePct: wa || db?.baseWastagePct || "3",
-          costPerKg: db?.costPerKg || "",
+          activeContentPct: String(db?.activeContentPct ?? "100"),
+          overagePct: String(ov ?? "10"),
+          wastagePct: String(wa ?? "3"),
+          costPerKg: String(db?.costPerKg ?? ""),
           supplier: db?.supplierName || "",
-          isEstimated: db?.isEstimatedPrice || !db,
+          isEstimated: db?.isEstimatedPrice ?? !db,
           isExcipient: false,
           inDb: !!db,
           dbId: db?.id || null,
@@ -245,25 +268,44 @@ export default function DealWorkbench() {
 
       // Build excipient lines
       const newExcipients: FormulaLine[] = [];
+      let excipientMatched = 0;
       for (const me of data.matchedExcipients || []) {
         const db = me.dbMatch;
+        if (db) excipientMatched++;
+
         newExcipients.push({
           key: key(),
           name: db?.name || me.name,
           rmId: db?.rmId || "",
           labelClaimMg: "",
-          activeContentPct: db?.activeContentPct || "95",
+          activeContentPct: String(db?.activeContentPct ?? "95"),
           overagePct: "0",
-          wastagePct: db?.baseWastagePct || "3",
-          costPerKg: db?.costPerKg || "",
+          wastagePct: String(db?.baseWastagePct ?? "3"),
+          costPerKg: String(db?.costPerKg ?? ""),
           supplier: db?.supplierName || "",
-          isEstimated: db?.isEstimatedPrice || !db,
+          isEstimated: db?.isEstimatedPrice ?? !db,
           isExcipient: true,
           inDb: !!db,
           dbId: db?.id || null,
         });
       }
       if (newExcipients.length > 0) setExcipientLines(newExcipients);
+
+      // Build extraction summary
+      setExtractionSummary({
+        fileName: file.name,
+        productName: ext.productName || "Unknown Product",
+        dosageForm: ext.dosageForm || "Unknown",
+        servingSize: ext.servingSize || 1,
+        servingsPerContainer: ext.servingsPerContainer || 0,
+        flavor: ext.flavor || null,
+        allergen: ext.allergenInfo || null,
+        activeCount: newActives.length,
+        activeMatched,
+        excipientCount: newExcipients.length,
+        excipientMatched,
+        brandedIngredients: ext.brandedIngredients || [],
+      });
 
       setStatus("Formulating");
     } finally {
@@ -362,25 +404,82 @@ export default function DealWorkbench() {
           )}
         </div>
 
+        {/* AI Extraction Summary */}
+        {extractionSummary && (
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl border border-blue-200 p-5 shadow-sm">
+            <div className="flex items-start justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-blue-600" />
+                <span className="text-sm font-semibold text-blue-900">AI Extracted from: {extractionSummary.fileName}</span>
+              </div>
+              <button onClick={() => setExtractionSummary(null)} className="text-blue-400 hover:text-blue-600 text-xs">Dismiss</button>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+              <div>
+                <span className="text-blue-500 font-medium">Product</span>
+                <p className="text-gray-900 font-semibold">{extractionSummary.productName}</p>
+              </div>
+              <div>
+                <span className="text-blue-500 font-medium">Format</span>
+                <p className="text-gray-900 capitalize">{extractionSummary.dosageForm} &middot; {extractionSummary.servingSize} per serving &middot; {extractionSummary.servingsPerContainer} count</p>
+              </div>
+              <div>
+                <span className="text-blue-500 font-medium">Active Ingredients</span>
+                <p className="text-gray-900">
+                  {extractionSummary.activeCount} found &middot;{" "}
+                  <span className="text-green-600 font-medium">{extractionSummary.activeMatched} matched</span>
+                  {extractionSummary.activeCount - extractionSummary.activeMatched > 0 && (
+                    <span className="text-red-600 font-medium"> &middot; {extractionSummary.activeCount - extractionSummary.activeMatched} NOT in DB</span>
+                  )}
+                </p>
+              </div>
+              <div>
+                <span className="text-blue-500 font-medium">Excipients</span>
+                <p className="text-gray-900">
+                  {extractionSummary.excipientCount} found &middot;{" "}
+                  <span className="text-green-600 font-medium">{extractionSummary.excipientMatched} matched</span>
+                  {extractionSummary.excipientCount - extractionSummary.excipientMatched > 0 && (
+                    <span className="text-red-600 font-medium"> &middot; {extractionSummary.excipientCount - extractionSummary.excipientMatched} NOT in DB</span>
+                  )}
+                </p>
+              </div>
+            </div>
+            {extractionSummary.brandedIngredients.length > 0 && (
+              <div className="mt-2 text-xs">
+                <span className="text-blue-500 font-medium">Branded Ingredients: </span>
+                <span className="text-amber-700 font-medium">{extractionSummary.brandedIngredients.join(", ")}</span>
+              </div>
+            )}
+            {extractionSummary.allergen && (
+              <div className="mt-1 text-xs">
+                <span className="text-blue-500 font-medium">Allergen: </span>
+                <span className="text-gray-700">{extractionSummary.allergen}</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Customer & Product */}
         <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
             <Field label="Product Name" value={productName} onChange={setProductName} placeholder="Bariatric Probiotic" span={2} />
             <Field label="Customer" value={customerCompany} onChange={setCustomerCompany} placeholder="BioSchwartz LLC" />
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <label className="block text-[10px] font-medium text-gray-500 mb-1">Format</label>
-                <select value={dosageForm} onChange={(e) => setDosageForm(e.target.value)} className="input-field text-xs py-1.5">
-                  <option value="capsule">Capsule</option>
-                  <option value="tablet">Tablet</option>
-                  <option value="powder">Powder</option>
-                  <option value="softgel">Softgel</option>
-                  <option value="gummy">Gummy</option>
-                </select>
-              </div>
-              <Field label="Serving" value={servingSize} onChange={setServingSize} type="number" small />
-              <Field label="Count" value={containerCount} onChange={setContainerCount} type="number" small />
+            <Field label="Customer Email" value={customerEmail} onChange={setCustomerEmail} placeholder="info@bioschwartz.com" />
+          </div>
+          <div className="grid grid-cols-4 gap-3">
+            <div>
+              <label className="block text-[10px] font-medium text-gray-500 mb-1">Format</label>
+              <select value={dosageForm} onChange={(e) => setDosageForm(e.target.value)} className="input-field text-xs py-1.5 w-full">
+                <option value="capsule">Capsule</option>
+                <option value="tablet">Tablet</option>
+                <option value="powder">Powder</option>
+                <option value="softgel">Softgel</option>
+                <option value="gummy">Gummy</option>
+              </select>
             </div>
+            <Field label="Serving Size" value={servingSize} onChange={setServingSize} type="number" />
+            <Field label="Count / Container" value={containerCount} onChange={setContainerCount} type="number" />
+            <Field label="Flavor" value={flavor} onChange={setFlavor} placeholder="Cherry Strawberry" />
           </div>
         </div>
 
@@ -501,7 +600,7 @@ export default function DealWorkbench() {
       </div>
 
       {/* Right Panel (sticky cost summary) */}
-      <div className="w-72 shrink-0 hidden lg:block">
+      <div className="w-80 shrink-0 hidden lg:block">
         <CostSummaryPanel
           dealNumber={dealNumber}
           status={status}
@@ -543,18 +642,21 @@ function IngredientTableUI({ lines, section, searchIdx, searchQuery, searchResul
   onRemove: (section: "active" | "excipient", idx: number) => void;
   onAddToDb: (idx: number) => void; onCloseSearch: () => void;
 }) {
+  const isExcipientTable = section === "excipient";
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-[11px]">
         <thead>
           <tr className="text-gray-500 font-medium border-b">
             <th className="text-left px-1 py-2 w-6">#</th>
-            <th className="text-left px-1 py-2 min-w-[160px]">Ingredient</th>
-            <th className="text-right px-1 py-2 w-16">Label (mg)</th>
-            <th className="text-right px-1 py-2 w-14">Active%</th>
-            <th className="text-right px-1 py-2 w-12">Ov%</th>
-            <th className="text-right px-1 py-2 w-12">Wa%</th>
-            <th className="text-right px-1 py-2 w-16">$/Kg</th>
+            <th className="text-left px-1 py-2 min-w-[200px]">Ingredient</th>
+            {!isExcipientTable && <th className="text-right px-1 py-2 w-20">Label (mg)</th>}
+            {!isExcipientTable && <th className="text-right px-1 py-2 w-16">Active %</th>}
+            <th className="text-right px-1 py-2 w-14">Ov %</th>
+            <th className="text-right px-1 py-2 w-14">Wa %</th>
+            <th className="text-right px-1 py-2 w-20">$/Kg</th>
+            <th className="text-left px-1 py-2 w-24">Supplier</th>
             <th className="w-6"></th>
           </tr>
         </thead>
@@ -564,46 +666,59 @@ function IngredientTableUI({ lines, section, searchIdx, searchQuery, searchResul
             const notInDb = !line.inDb && line.name.trim().length > 0;
 
             return (
-              <tr key={line.key} className={`border-b border-gray-50 ${notInDb ? "bg-red-50 border-l-4 border-l-red-400" : ""}`}>
-                <td className="px-1 py-1 text-gray-400">{i + 1}</td>
-                <td className="px-1 py-1 relative">
+              <tr key={line.key} className={`border-b border-gray-50 ${
+                notInDb ? "bg-red-100/70 border-l-4 border-l-red-500" : line.inDb && line.name.trim() ? "bg-green-50/30" : ""
+              }`}>
+                <td className="px-1 py-1.5 text-gray-400 text-center">{i + 1}</td>
+                <td className="px-1 py-1.5 relative">
                   {isSearching ? (
                     <div className="relative">
                       <input autoFocus value={searchQuery} onChange={(e) => onDoSearch(e.target.value)}
                         onBlur={() => setTimeout(onCloseSearch, 200)}
-                        className="input-field text-[11px] py-1 pl-6" placeholder="Search..." />
+                        className="input-field text-[11px] py-1 pl-6 w-full" placeholder="Search ingredients..." />
                       <Search className="absolute left-2 top-1.5 h-3 w-3 text-gray-400" />
                       {searchResults.length > 0 && (
                         <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-xl max-h-48 overflow-y-auto">
                           {searchResults.map((r: any) => (
                             <button key={r.id} onMouseDown={() => onSelectIngredient(section, i, r)}
-                              className="w-full text-left px-2 py-1.5 hover:bg-blue-50 text-[10px] border-b border-gray-50">
-                              <span className="font-medium">{r.name}</span>
-                              <span className="text-gray-400 ml-2">${r.costPerKg}/kg · {r.category}</span>
+                              className="w-full text-left px-3 py-2 hover:bg-blue-50 text-[11px] border-b border-gray-50">
+                              <div className="flex items-center justify-between">
+                                <span className="font-medium text-gray-900">{r.name}</span>
+                                <span className="font-mono text-gray-500">${r.costPerKg}/kg</span>
+                              </div>
+                              <div className="text-[10px] text-gray-400 mt-0.5">{r.rmId} &middot; {r.category} &middot; {r.supplierName || "Unknown"}</div>
                             </button>
                           ))}
                         </div>
                       )}
                     </div>
                   ) : (
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => onSearch(i)} className="text-left text-[11px] hover:bg-gray-100 rounded px-1 py-0.5 flex-1 truncate">
-                        {line.name || <span className="text-gray-400 italic">Search...</span>}
+                    <div className="flex items-center gap-1.5">
+                      {line.inDb && line.name.trim() && <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />}
+                      {notInDb && <XCircle className="h-3 w-3 text-red-500 shrink-0" />}
+                      <button onClick={() => onSearch(i)} className="text-left text-[11px] hover:bg-gray-100 rounded px-1 py-0.5 flex-1 truncate font-medium">
+                        {line.name || <span className="text-gray-400 italic font-normal">Click to search...</span>}
                       </button>
+                      {line.rmId && <span className="text-[9px] text-gray-400 font-mono shrink-0">{line.rmId}</span>}
                       {notInDb && (
-                        <button onClick={() => onAddToDb(i)} className="shrink-0 px-1.5 py-0.5 bg-red-100 text-red-700 text-[9px] font-bold rounded hover:bg-red-200">
+                        <button onClick={() => onAddToDb(i)} className="shrink-0 px-2 py-1 bg-red-600 text-white text-[9px] font-bold rounded-md hover:bg-red-700 shadow-sm">
                           + Add to DB
                         </button>
                       )}
                     </div>
                   )}
                 </td>
-                <td className="px-1 py-1"><input type="number" value={line.labelClaimMg} onChange={(e) => onUpdate(section, i, "labelClaimMg", e.target.value)} className="input-field text-[11px] py-1 text-right w-full" /></td>
-                <td className="px-1 py-1"><input type="number" value={line.activeContentPct} onChange={(e) => onUpdate(section, i, "activeContentPct", e.target.value)} className="input-field text-[11px] py-1 text-right w-full bg-blue-50/50" /></td>
-                <td className="px-1 py-1"><input type="number" value={line.overagePct} onChange={(e) => onUpdate(section, i, "overagePct", e.target.value)} className="input-field text-[11px] py-1 text-right w-full" /></td>
-                <td className="px-1 py-1"><input type="number" value={line.wastagePct} onChange={(e) => onUpdate(section, i, "wastagePct", e.target.value)} className="input-field text-[11px] py-1 text-right w-full" /></td>
-                <td className="px-1 py-1"><input type="number" value={line.costPerKg} onChange={(e) => onUpdate(section, i, "costPerKg", e.target.value)} className="input-field text-[11px] py-1 text-right w-full" /></td>
-                <td className="px-1 py-1">
+                {!isExcipientTable && (
+                  <td className="px-1 py-1.5"><input type="number" value={line.labelClaimMg} onChange={(e) => onUpdate(section, i, "labelClaimMg", e.target.value)} className="input-field text-[11px] py-1 text-right w-full" placeholder="0" /></td>
+                )}
+                {!isExcipientTable && (
+                  <td className="px-1 py-1.5"><input type="number" value={line.activeContentPct} onChange={(e) => onUpdate(section, i, "activeContentPct", e.target.value)} className="input-field text-[11px] py-1 text-right w-full bg-blue-50/50" placeholder="100" /></td>
+                )}
+                <td className="px-1 py-1.5"><input type="number" value={line.overagePct} onChange={(e) => onUpdate(section, i, "overagePct", e.target.value)} className="input-field text-[11px] py-1 text-right w-full" placeholder="0" /></td>
+                <td className="px-1 py-1.5"><input type="number" value={line.wastagePct} onChange={(e) => onUpdate(section, i, "wastagePct", e.target.value)} className="input-field text-[11px] py-1 text-right w-full" placeholder="3" /></td>
+                <td className="px-1 py-1.5"><input type="number" value={line.costPerKg} onChange={(e) => onUpdate(section, i, "costPerKg", e.target.value)} className="input-field text-[11px] py-1 text-right w-full font-mono" placeholder="0.00" /></td>
+                <td className="px-1 py-1.5 text-[10px] text-gray-500 truncate max-w-[96px]" title={line.supplier}>{line.supplier || "—"}</td>
+                <td className="px-1 py-1.5">
                   <button onClick={() => onRemove(section, i)} className="p-0.5 text-gray-300 hover:text-red-500"><Trash2 className="h-3 w-3" /></button>
                 </td>
               </tr>
