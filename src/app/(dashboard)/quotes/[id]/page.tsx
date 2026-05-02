@@ -4,6 +4,7 @@ import { asc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { FileSpreadsheet, FileText, ChevronLeft } from "lucide-react";
 import { notFound } from "next/navigation";
+import { AcceptQuoteButton } from "./accept-button";
 
 export const dynamic = "force-dynamic";
 
@@ -83,7 +84,12 @@ export default async function QuoteDetailPage({ params }: { params: Promise<{ id
             {!customer && (meta.customerName as string) && <span>· {meta.customerName as string}</span>}
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-start">
+          <AcceptQuoteButton
+            quoteId={id}
+            quoteStatus={q.status}
+            tiers={tiers.map((t) => ({ tierQuantity: t.tierQuantity, pricePerUnit: parseFloat(t.pricePerUnit), marginPct: parseFloat(t.marginPct) }))}
+          />
           <a
             href={`/api/quotes/${id}/xlsx`}
             className="inline-flex items-center gap-2 px-4 py-2 bg-[#d10a11] hover:bg-[#a30a0f] text-white text-sm font-semibold rounded-md"
