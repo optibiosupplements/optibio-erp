@@ -13,7 +13,7 @@
  *   6. Save → POST /api/formulations creates Formulation + lines, links RFQ
  */
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { Suspense, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, Sparkles, Save, FlaskConical, AlertTriangle, Search, Bot } from "lucide-react";
 import { sizeCapsule } from "@/domains/formulation/capsule-sizer";
@@ -92,6 +92,14 @@ function toMg(amount: number, unit: string, name: string): number {
 }
 
 export default function FormulationWorkbenchPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>}>
+      <Workbench />
+    </Suspense>
+  );
+}
+
+function Workbench() {
   const router = useRouter();
   const params = useSearchParams();
   const rfqId = params.get("rfqId");

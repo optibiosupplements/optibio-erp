@@ -13,7 +13,7 @@
  * If no formulationId is provided, show a picker / nudge to The Lab.
  */
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { Suspense, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Loader2, Save, FileSpreadsheet, AlertTriangle, FlaskConical, ChevronLeft } from "lucide-react";
@@ -66,6 +66,14 @@ interface FormulationData {
 }
 
 export default function QuoteWorkspacePage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>}>
+      <QuoteWorkspace />
+    </Suspense>
+  );
+}
+
+function QuoteWorkspace() {
   const router = useRouter();
   const params = useSearchParams();
   const formulationId = params.get("formulationId");
