@@ -10,7 +10,8 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "seed": "bun scripts/seed.ts",
-    "seed:cs": "bun scripts/seed-customers-suppliers.ts"
+    "seed:cs": "bun scripts/seed-customers-suppliers.ts",
+    "calibrate": "bun scripts/calibrate-pricing.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",

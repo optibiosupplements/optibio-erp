@@ -7,6 +7,7 @@ import {
   LayoutDashboard, Inbox, FlaskConical, FileText, ShoppingCart, Factory, Package,
   FileCheck, Users, Building2, Pill, Settings, PanelLeftClose, PanelLeftOpen, LogOut,
   TrendingUp, Truck, Receipt, DollarSign, CheckSquare, PackageOpen, Lightbulb, RotateCcw,
+  Boxes, ClipboardList,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -26,7 +27,9 @@ const NAV_ITEMS = [
   { href: "/customers", label: "Customers", icon: Users, match: (p: string) => p.startsWith("/customers") },
   { href: "/suppliers", label: "Suppliers", icon: Building2, match: (p: string) => p.startsWith("/suppliers") },
   { href: "/ingredients", label: "Ingredients", icon: Pill, match: (p: string) => p.startsWith("/ingredients") },
+  { href: "/inventory", label: "Inventory", icon: Boxes, match: (p: string) => p.startsWith("/inventory") },
   { href: "/raw-material-lots", label: "Raw Lots", icon: PackageOpen, match: (p: string) => p.startsWith("/raw-material-lots") },
+  { href: "/supplier-pos", label: "Supplier POs", icon: ClipboardList, match: (p: string) => p.startsWith("/supplier-pos") },
   { href: "/retro", label: "Retro", icon: RotateCcw, match: (p: string) => p.startsWith("/retro") },
   { href: "/learnings", label: "Learnings", icon: Lightbulb, match: (p: string) => p.startsWith("/learnings") },
   { href: "/settings", label: "Settings", icon: Settings, match: (p: string) => p.startsWith("/settings") },

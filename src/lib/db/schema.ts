@@ -569,6 +569,49 @@ export const payments = pgTable("payments", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  category: text("category").notNull().default("general"),
+  description: text("description"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ============================================================================
+// PHASE 3.5 — SUPPLIER PURCHASE ORDERS (raw material procurement)
+// ============================================================================
+
+export const supplierPurchaseOrders = pgTable("supplier_purchase_orders", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  spoNumber: text("spo_number").unique().notNull(),
+  supplierId: uuid("supplier_id").references(() => suppliers.id).notNull(),
+  status: text("status").notNull().default("Draft"),
+  orderDate: date("order_date").notNull(),
+  expectedDate: date("expected_date"),
+  receivedDate: date("received_date"),
+  totalCost: numeric("total_cost", { precision: 12, scale: 2 }).default("0"),
+  paymentTerms: text("payment_terms").default("Net 30"),
+  shippingTerms: text("shipping_terms"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const supplierPoLineItems = pgTable("supplier_po_line_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  supplierPoId: uuid("supplier_po_id")
+    .references(() => supplierPurchaseOrders.id, { onDelete: "cascade" })
+    .notNull(),
+  ingredientId: uuid("ingredient_id").references(() => ingredients.id),
+  description: text("description").notNull(),
+  quantityKg: numeric("quantity_kg", { precision: 12, scale: 4 }).notNull(),
+  unitPrice: numeric("unit_price", { precision: 10, scale: 2 }).notNull(),
+  lineTotal: numeric("line_total", { precision: 12, scale: 2 }).notNull(),
+  receivedQuantityKg: numeric("received_quantity_kg", { precision: 12, scale: 4 }).default("0"),
+  rawMaterialLotId: uuid("raw_material_lot_id").references(() => rawMaterialLots.id),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
 export const tasks = pgTable("tasks", {
   id: uuid("id").defaultRandom().primaryKey(),
   title: text("title").notNull(),
