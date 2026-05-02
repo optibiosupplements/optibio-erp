@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Factory, Truck } from "lucide-react";
+import { Loader2, Factory, Truck, Receipt } from "lucide-react";
 
 export function StartProductionRunButton({ purchaseOrderId, targetBatchSize }: { purchaseOrderId: string; targetBatchSize: number }) {
   const router = useRouter();
@@ -114,5 +114,34 @@ export function CreateShipmentButton({
         <button onClick={() => setOpen(false)} className="px-3 py-1.5 border border-slate-300 text-slate-700 text-xs rounded hover:bg-slate-50">Cancel</button>
       </div>
     </div>
+  );
+}
+
+export function CreateInvoiceButton({ purchaseOrderId, hasInvoice }: { purchaseOrderId: string; hasInvoice: boolean }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+
+  function go() {
+    start(async () => {
+      const res = await fetch("/api/invoices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ purchaseOrderId, dueDays: 30 }),
+      });
+      const data = await res.json();
+      if (data.success) router.push(`/invoices/${data.invoiceId}`);
+      else alert(`Failed: ${data.error}`);
+    });
+  }
+
+  return (
+    <button
+      onClick={go}
+      disabled={pending}
+      className="inline-flex items-center gap-2 px-4 py-2 border border-emerald-600 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 text-sm font-semibold rounded-md transition-colors"
+    >
+      {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Receipt className="h-4 w-4" />}
+      {hasInvoice ? "Create Another Invoice" : "Create Invoice"}
+    </button>
   );
 }

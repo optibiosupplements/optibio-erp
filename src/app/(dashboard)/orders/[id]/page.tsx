@@ -1,10 +1,10 @@
 import { db } from "@/lib/db";
-import { purchaseOrders, poLineItems, customers, formulations, quotes, finishedProductLots, shipments } from "@/lib/db/schema";
+import { purchaseOrders, poLineItems, customers, formulations, quotes, finishedProductLots, shipments, invoices } from "@/lib/db/schema";
 import { asc, eq, desc } from "drizzle-orm";
 import Link from "next/link";
-import { ShoppingCart, ChevronLeft, FlaskConical, Factory, Truck } from "lucide-react";
+import { ShoppingCart, ChevronLeft, FlaskConical, Factory, Truck, Receipt } from "lucide-react";
 import { notFound } from "next/navigation";
-import { StartProductionRunButton, CreateShipmentButton } from "./actions";
+import { StartProductionRunButton, CreateShipmentButton, CreateInvoiceButton } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -43,9 +43,11 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
     : [];
 
   const poShipments = await db.select().from(shipments).where(eq(shipments.purchaseOrderId, id)).orderBy(desc(shipments.createdAt));
+  const poInvoices = await db.select().from(invoices).where(eq(invoices.purchaseOrderId, id)).orderBy(desc(invoices.createdAt));
 
   const canStartRun = po.status === "Accepted" && lines.length > 0;
   const canShip = ["In Production", "QC Hold", "Released"].includes(po.status) && availableLots.length > 0;
+  const canInvoice = ["Accepted", "In Production", "QC Hold", "Released", "Shipped", "Delivered"].includes(po.status);
 
   return (
     <div className="max-w-6xl mx-auto pb-12">
@@ -73,6 +75,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         <div className="flex flex-col items-end gap-2">
           {canStartRun && <StartProductionRunButton purchaseOrderId={po.id} targetBatchSize={po.tierQuantity} />}
           {canShip && <CreateShipmentButton purchaseOrderId={po.id} defaultUnits={po.tierQuantity} availableLots={availableLots.map((l) => ({ id: l.id, lotNumber: l.lotNumber, quantityUnits: l.quantityUnits }))} />}
+          {canInvoice && <CreateInvoiceButton purchaseOrderId={po.id} hasInvoice={poInvoices.length > 0} />}
         </div>
       </div>
 
@@ -136,6 +139,36 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           </tbody>
         </table>
       </section>
+
+      {poInvoices.length > 0 && (
+        <section className="bg-white border border-slate-200 rounded-lg overflow-hidden mt-4 shadow-sm">
+          <h2 className="text-sm font-semibold text-slate-800 px-5 py-3 border-b border-slate-200 bg-slate-50 flex items-center gap-1.5">
+            <Receipt className="h-3.5 w-3.5 text-[#d10a11]" /> Invoices ({poInvoices.length})
+          </h2>
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 text-slate-500"><tr>
+              <th className="text-left px-4 py-1.5 font-medium">Invoice #</th>
+              <th className="text-left px-4 py-1.5 font-medium">Issue</th>
+              <th className="text-left px-4 py-1.5 font-medium">Due</th>
+              <th className="text-right px-4 py-1.5 font-medium">Total</th>
+              <th className="text-right px-4 py-1.5 font-medium">Paid</th>
+              <th className="text-left px-4 py-1.5 font-medium">Status</th>
+            </tr></thead>
+            <tbody className="divide-y divide-slate-100 tabular-nums">
+              {poInvoices.map((inv) => (
+                <tr key={inv.id} className="hover:bg-slate-50/50">
+                  <td className="px-4 py-1.5 font-mono"><Link href={`/invoices/${inv.id}`} className="text-slate-900 hover:text-[#d10a11]">{inv.invoiceNumber}</Link></td>
+                  <td className="px-4 py-1.5 text-slate-600">{inv.issueDate}</td>
+                  <td className="px-4 py-1.5 text-slate-600">{inv.dueDate}</td>
+                  <td className="px-4 py-1.5 text-right">${parseFloat(inv.totalAmount).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                  <td className="px-4 py-1.5 text-right text-emerald-700">${parseFloat(inv.amountPaid ?? "0").toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                  <td className="px-4 py-1.5"><span className="inline-block px-2 py-0.5 text-[10px] font-medium rounded-full bg-slate-100 text-slate-700">{inv.status}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       {poShipments.length > 0 && (
         <section className="bg-white border border-slate-200 rounded-lg overflow-hidden mt-4 shadow-sm">

@@ -521,3 +521,66 @@ export const documents = pgTable("documents", {
   uploadedBy: text("uploaded_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// ============================================================================
+// PHASE 3 — ACCOUNTING (invoices, payments, tasks)
+// ============================================================================
+
+export const invoices = pgTable("invoices", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  invoiceNumber: text("invoice_number").unique().notNull(),
+  customerId: uuid("customer_id").references(() => customers.id),
+  purchaseOrderId: uuid("purchase_order_id").references(() => purchaseOrders.id),
+  issueDate: date("issue_date").notNull(),
+  dueDate: date("due_date").notNull(),
+  subtotal: numeric("subtotal", { precision: 12, scale: 2 }).notNull(),
+  taxAmount: numeric("tax_amount", { precision: 12, scale: 2 }).default("0"),
+  totalAmount: numeric("total_amount", { precision: 12, scale: 2 }).notNull(),
+  amountPaid: numeric("amount_paid", { precision: 12, scale: 2 }).default("0"),
+  status: text("status").notNull().default("Draft"),
+  paymentTerms: text("payment_terms").default("Net 30"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const invoiceLineItems = pgTable("invoice_line_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  invoiceId: uuid("invoice_id")
+    .references(() => invoices.id, { onDelete: "cascade" })
+    .notNull(),
+  description: text("description").notNull(),
+  quantity: numeric("quantity", { precision: 12, scale: 4 }).notNull(),
+  unitPrice: numeric("unit_price", { precision: 12, scale: 4 }).notNull(),
+  lineTotal: numeric("line_total", { precision: 12, scale: 2 }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const payments = pgTable("payments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  paymentNumber: text("payment_number").unique().notNull(),
+  invoiceId: uuid("invoice_id").references(() => invoices.id),
+  customerId: uuid("customer_id").references(() => customers.id),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  paymentDate: date("payment_date").notNull(),
+  method: text("method").notNull(),
+  reference: text("reference"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const tasks = pgTable("tasks", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("Todo"),
+  priority: text("priority").notNull().default("Normal"),
+  assignee: text("assignee"),
+  dueDate: date("due_date"),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  relatedTable: text("related_table"),
+  relatedId: uuid("related_id"),
+  customerId: uuid("customer_id").references(() => customers.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
