@@ -1,0 +1,13 @@
+{
+  "_source": "Desktop/0. WORK/1.CUSTOMERS/ASHER/NEW RFQ/Price Quote 12.31.25.docx",
+  "rawIntakeText": "Berberine HCl 500mg",
+  "expectedFormat": "CAPSULE",
+  "expectedActiveCount": 1,
+  "expectedActives": [
+    { "name": "Berberine HCl", "amount": "500", "unit": "mg" }
+  ],
+  "realPricing": {
+    "tier2k": { "pricePerBottle": 8.10 },
+    "tier5k": { "pricePerBottle": 7.35 }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "_source": "Desktop/0. WORK/1.CUSTOMERS/ASHER/NEW RFQ/Price Quote 12.31.25.docx",
+  "rawIntakeText": "Beet 20:1 400mg + Grape Seed 100mg + Vit C 90mg + Black Pepper 5mg",
+  "expectedFormat": "CAPSULE",
+  "expectedActiveCount": 4,
+  "expectedActives": [
+    { "name": "Beet", "amount": "400", "unit": "mg", "notesContains": "20:1" },
+    { "name": "Grape Seed", "amount": "100", "unit": "mg" },
+    { "name": "Vit C", "amount": "90", "unit": "mg" },
+    { "name": "Black Pepper", "amount": "5", "unit": "mg" }
+  ],
+  "realPricing": {
+    "tier2k": { "pricePerBottle": 4.75 },
+    "tier5k": { "pricePerBottle": 4.40 }
+  }
+}

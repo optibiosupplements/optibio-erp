@@ -1,479 +1,441 @@
 "use client";
 
-import { useState, useRef } from "react";
+/**
+ * Magic Box — single-page workbench RFQ intake.
+ *
+ * Per the spec doc ("What should happen when the user clicks.docx"):
+ * - User pastes raw text → clicks "Analyze & Auto-Fill" → RFQ created IMMEDIATELY
+ *   (status=Draft, RFQ-YYMM-####), even if parsing fails. Never block the user.
+ * - Greedy parser extracts ingredient lines (active vs inactive split).
+ * - Format auto-detected (Capsule / Tablet / Powder). Stickpack / Gummy / Liquid /
+ *   Softgel route to a non-blocking "format not supported" warning.
+ * - Format selector lives BELOW the Magic Box. If detection fails, leave blank —
+ *   do NOT default to Capsule.
+ * - Customer / contact section is LAST and never gates submit.
+ * - Submit-to-R&D requires only: format set + ≥1 active ingredient.
+ */
+
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import {
-  FileUp, Upload, Loader2, Sparkles, Save, Check, ChevronRight, ChevronLeft,
-  User, Package, FlaskConical, Shield, Factory, FileText, AlertTriangle,
-} from "lucide-react";
+import { Sparkles, Save, Send, Loader2, Plus, Trash2, AlertTriangle, FileText, ChevronRight } from "lucide-react";
+import { parseIngredients, ingredientsToRawText, type ParsedIngredient } from "@/domains/intake/ingredient-parser";
+import { detectFormat, SUPPORTED_FORMATS, type SupportedFormat } from "@/domains/intake/format-detector";
+import { suggestProjectName } from "@/domains/intake/id-generator";
 
-const STEPS = [
-  { id: 0, label: "Upload", icon: FileUp, desc: "Drop SFP or start fresh" },
-  { id: 1, label: "Customer", icon: User, desc: "Customer information" },
-  { id: 2, label: "Product", icon: FlaskConical, desc: "Product specification" },
-  { id: 3, label: "Formula", icon: FlaskConical, desc: "Ingredients & dosages" },
-  { id: 4, label: "Packaging", icon: Package, desc: "Container & labeling" },
-  { id: 5, label: "Regulatory", icon: Shield, desc: "Certifications & compliance" },
-  { id: 6, label: "Manufacturing", icon: Factory, desc: "MOQ, timeline, co-packer" },
-  { id: 7, label: "Review", icon: FileText, desc: "Review & submit" },
-];
+type Format = SupportedFormat | "";
 
-interface FormData {
-  // Customer
+interface Customer {
   customerCompany: string;
   customerContact: string;
   customerEmail: string;
   customerPhone: string;
-  source: string;
-  priority: string;
-  // Product
-  productName: string;
-  dosageForm: string;
-  servingSize: string;
-  servingSizeUnit: string;
-  servingsPerContainer: string;
-  countPerBottle: string;
-  flavor: string;
-  targetRetailPrice: string;
-  // Formula
-  formulaJson: any[];
-  otherIngredients: string;
-  specialRequirements: string;
-  // Packaging
-  bulkOrPackaged: string;
-  primaryPackaging: string;
-  capsuleType: string;
-  capsuleSize: string;
-  secondaryPackaging: string;
-  labelStatus: string;
-  // Regulatory
-  certifications: string[];
-  targetMarkets: string;
-  allergenStatement: string;
-  claims: string;
-  // Manufacturing
-  moq: string;
-  targetTimeline: string;
-  coPackerPreference: string;
-  // Notes
-  internalNotes: string;
-  customerNotes: string;
-  deadline: string;
 }
 
-const INITIAL: FormData = {
-  customerCompany: "", customerContact: "", customerEmail: "", customerPhone: "",
-  source: "Email", priority: "Normal",
-  productName: "", dosageForm: "Capsule", servingSize: "1", servingSizeUnit: "capsule",
-  servingsPerContainer: "60", countPerBottle: "60", flavor: "", targetRetailPrice: "",
-  formulaJson: [], otherIngredients: "", specialRequirements: "",
-  bulkOrPackaged: "Packaged", primaryPackaging: "HDPE Bottle", capsuleType: "Veggie",
-  capsuleSize: "0", secondaryPackaging: "", labelStatus: "Customer Provides",
-  certifications: [], targetMarkets: "USA", allergenStatement: "", claims: "",
-  moq: "2000", targetTimeline: "8-12 weeks", coPackerPreference: "",
-  internalNotes: "", customerNotes: "", deadline: "",
+const EMPTY_CUSTOMER: Customer = {
+  customerCompany: "",
+  customerContact: "",
+  customerEmail: "",
+  customerPhone: "",
 };
 
-export default function NewIntakePage() {
-  const [step, setStep] = useState(0);
-  const [form, setForm] = useState<FormData>(INITIAL);
-  const [extracting, setExtracting] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [savedRfq, setSavedRfq] = useState<{ id: string; number: string } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+export default function MagicBoxPage() {
   const router = useRouter();
+  const [pending, startTransition] = useTransition();
 
-  const set = (field: keyof FormData, value: any) => setForm({ ...form, [field]: value });
-  const next = () => setStep(Math.min(step + 1, STEPS.length - 1));
-  const prev = () => setStep(Math.max(step - 1, 0));
+  const [rawText, setRawText] = useState("");
+  const [analyzing, setAnalyzing] = useState(false);
+  const [rfqId, setRfqId] = useState<string | null>(null);
+  const [rfqNumber, setRfqNumber] = useState<string | null>(null);
 
-  // AI Extraction
-  const handleExtract = async (file: File) => {
-    setExtracting(true);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch("/api/extract", { method: "POST", body: fd });
-      const data = await res.json();
-      if (data.success) {
-        const ext = data.extracted;
-        setForm((prev) => ({
-          ...prev,
-          productName: ext.productName || prev.productName,
-          dosageForm: ext.dosageForm ? capitalize(ext.dosageForm) : prev.dosageForm,
-          servingSize: ext.servingSize ? String(ext.servingSize) : prev.servingSize,
-          servingSizeUnit: ext.servingSizeUnit || prev.servingSizeUnit,
-          servingsPerContainer: ext.servingsPerContainer ? String(ext.servingsPerContainer) : prev.servingsPerContainer,
-          countPerBottle: ext.servingsPerContainer ? String(ext.servingsPerContainer) : prev.countPerBottle,
-          flavor: ext.flavor || prev.flavor,
-          formulaJson: data.matchedIngredients || [],
-          otherIngredients: (ext.otherIngredients || []).join(", "),
-          allergenStatement: ext.allergenInfo || prev.allergenStatement,
-        }));
-        setStep(1); // Jump to customer info (product info auto-filled)
-      }
-    } catch {
-    } finally {
-      setExtracting(false);
+  const [ingredients, setIngredients] = useState<ParsedIngredient[]>([]);
+  const [format, setFormat] = useState<Format>("");
+  const [formatWarning, setFormatWarning] = useState<string | null>(null);
+  const [parseHelper, setParseHelper] = useState<string | null>(null);
+
+  const [productName, setProductName] = useState("");
+  const [servingSize, setServingSize] = useState("");
+  const [servingsPerContainer, setServingsPerContainer] = useState("");
+  const [countPerBottle, setCountPerBottle] = useState("");
+  const [packagingNotes, setPackagingNotes] = useState("");
+  const [customer, setCustomer] = useState<Customer>(EMPTY_CUSTOMER);
+
+  const activeCount = ingredients.filter((i) => i.isActive).length;
+  const submitEnabled = !!format && activeCount >= 1;
+
+  async function handleAnalyze() {
+    if (!rawText.trim()) {
+      setParseHelper("Paste a formula above and click Analyze.");
+      return;
     }
-  };
+    setAnalyzing(true);
+    setParseHelper(null);
 
-  const onDrop = (e: React.DragEvent) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) handleExtract(f); };
-  const onFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (f) handleExtract(f); };
+    // Step 1 — parse and detect format CLIENT-SIDE first so we can populate
+    // immediately while the server creates the RFQ row.
+    const parsed = parseIngredients(rawText);
+    const detection = detectFormat(rawText);
 
-  // Save
-  const saveIntake = async () => {
-    setSaving(true);
+    // Apply parser results immediately
+    setIngredients(parsed);
+
+    // Format: only auto-set if user hasn't already chosen one. If the detection
+    // is unsupported (stickpack/gummy/etc.), surface the warning but do NOT
+    // change the user's selection.
+    if (!format && detection.isSupported && detection.format) {
+      setFormat(detection.format as SupportedFormat);
+    }
+    setFormatWarning(detection.warning ?? null);
+
+    // Suggest a product name from the first active ingredient
+    if (!productName && parsed.length > 0) {
+      const suggested = suggestProjectName(parsed.map((p) => ({ name: p.name, amount: p.amount, unit: p.unit })), detection.isSupported ? detection.format : null);
+      setProductName(suggested);
+    }
+
+    // Step 2 — create the RFQ on the server. Don't block the UI on this; the
+    // parsing already populated the form.
     try {
       const res = await fetch("/api/intake", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...form,
-          formulaJson: form.formulaJson,
-          status: "In Review",
+          status: "New",
+          priority: "Normal",
+          source: "MagicBox",
+          dosageForm: detection.isSupported ? detection.format : null,
+          formulaJson: parsed,
+          internalNotes: rawText,
+          productName: productName || (parsed.length ? suggestProjectName(parsed.map((p) => ({ name: p.name, amount: p.amount, unit: p.unit })), detection.isSupported ? detection.format : null) : null),
         }),
       });
       const data = await res.json();
-      if (data.success) setSavedRfq({ id: data.rfqId, number: data.rfqNumber });
-    } catch {
+      if (data.success) {
+        setRfqId(data.rfqId);
+        setRfqNumber(data.rfqNumber);
+        if (parsed.length === 0) {
+          setParseHelper(`Saved ${data.rfqNumber}. Add ingredients below — your text didn't parse cleanly.`);
+        }
+      } else {
+        setParseHelper(`Couldn't save RFQ: ${data.error || "unknown error"}`);
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setParseHelper(`Couldn't reach server: ${msg}`);
     } finally {
-      setSaving(false);
+      setAnalyzing(false);
     }
-  };
+  }
+
+  async function handleSave() {
+    if (!rfqId) return;
+    startTransition(async () => {
+      const res = await fetch(`/api/intake/${rfqId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dosageForm: format || null,
+          productName,
+          servingSize: servingSize || null,
+          servingsPerContainer: servingsPerContainer || null,
+          countPerBottle: countPerBottle || null,
+          formulaJson: ingredients,
+          internalNotes: rawText,
+          customerCompany: customer.customerCompany || null,
+          customerContact: customer.customerContact || null,
+          customerEmail: customer.customerEmail || null,
+          customerPhone: customer.customerPhone || null,
+          primaryPackaging: packagingNotes || null,
+        }),
+      });
+      if (!res.ok) {
+        const t = await res.text();
+        alert(`Save failed: ${t}`);
+      }
+    });
+  }
+
+  async function handleSubmitToRD() {
+    if (!rfqId || !submitEnabled) return;
+    await handleSave();
+    const res = await fetch(`/api/intake/${rfqId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "In Review" }),
+    });
+    if (res.ok) router.push(`/formulations/new?rfqId=${rfqId}`);
+    else alert("Failed to submit to R&D.");
+  }
+
+  function addIngredientRow() {
+    setIngredients((rows) => [
+      ...rows,
+      { id: `ing_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`, name: "", amount: "", unit: "mg", notes: "", isActive: true },
+    ]);
+  }
+
+  function updateIngredient(id: string, patch: Partial<ParsedIngredient>) {
+    setIngredients((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  }
+
+  function removeIngredient(id: string) {
+    setIngredients((rows) => rows.filter((r) => r.id !== id));
+  }
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-5xl mx-auto pb-24">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">New RFQ Intake</h1>
-        <p className="text-sm text-gray-500 mt-1">Complete product intake form — AI will auto-fill from uploaded supplement facts panels</p>
-      </div>
-
-      {/* Step Indicator */}
-      <div className="flex items-center gap-1 mb-8 overflow-x-auto pb-2">
-        {STEPS.map((s, i) => {
-          const Icon = s.icon;
-          const active = i === step;
-          const done = i < step;
-          return (
-            <button
-              key={s.id}
-              onClick={() => setStep(i)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
-                active ? "bg-[#d10a11] text-white shadow-sm" : done ? "bg-green-50 text-green-700" : "bg-gray-50 text-gray-400 hover:bg-gray-100"
-              }`}
-            >
-              {done ? <Check className="h-3.5 w-3.5" /> : <Icon className="h-3.5 w-3.5" />}
-              {s.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Step Content */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-8 shadow-sm min-h-[400px]">
-
-        {/* Step 0: Upload */}
-        {step === 0 && (
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">Start with a Supplement Facts Panel</h2>
-            <p className="text-sm text-gray-500 mb-6">Drop a PDF or image and AI will extract everything automatically. Or skip to fill in manually.</p>
-
-            <div
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={onDrop}
-              onClick={() => !extracting && fileInputRef.current?.click()}
-              className={`rounded-2xl border-2 border-dashed p-12 text-center cursor-pointer transition-all ${
-                dragOver ? "border-[#d10a11] bg-red-50/50" : extracting ? "border-blue-300 bg-blue-50/30" : "border-gray-200 hover:border-gray-300"
-              }`}
-            >
-              <input ref={fileInputRef} type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={onFileSelect} className="hidden" />
-              {extracting ? (
-                <div className="flex flex-col items-center gap-3">
-                  <Loader2 className="h-10 w-10 text-blue-500 animate-spin" />
-                  <p className="text-sm font-semibold text-blue-700">AI is extracting the supplement facts panel...</p>
-                  <p className="text-xs text-blue-500">Matching against 2,567 ingredients in our database</p>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-3">
-                  <FileUp className="h-10 w-10 text-gray-300" />
-                  <p className="text-sm font-semibold text-gray-700">Drop a Supplement Facts panel here</p>
-                  <p className="text-xs text-gray-400">PDF, PNG, or JPG — AI extracts ingredients, dosages, and product info</p>
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 rounded-lg text-xs text-gray-500 mt-2">
-                    <Upload className="h-3 w-3" /> Upload file
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-center mt-6">
-              <button onClick={next} className="text-sm text-gray-500 hover:text-gray-700 underline">
-                Skip — fill in manually
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 1: Customer */}
-        {step === 1 && (
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-6">Customer Information</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <InputField label="Company Name *" value={form.customerCompany} onChange={(v) => set("customerCompany", v)} placeholder="BioSchwartz LLC" />
-              <InputField label="Contact Name" value={form.customerContact} onChange={(v) => set("customerContact", v)} placeholder="John Smith" />
-              <InputField label="Email *" value={form.customerEmail} onChange={(v) => set("customerEmail", v)} placeholder="john@bioschwartz.com" type="email" />
-              <InputField label="Phone" value={form.customerPhone} onChange={(v) => set("customerPhone", v)} placeholder="(555) 123-4567" />
-              <SelectField label="Source" value={form.source} onChange={(v) => set("source", v)} options={["Email", "Phone", "Website", "Referral", "Trade Show", "Other"]} />
-              <SelectField label="Priority" value={form.priority} onChange={(v) => set("priority", v)} options={["Low", "Normal", "High", "Urgent"]} />
-            </div>
-          </div>
-        )}
-
-        {/* Step 2: Product */}
-        {step === 2 && (
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-6">Product Specification</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <InputField label="Product Name *" value={form.productName} onChange={(v) => set("productName", v)} placeholder="Bariatric Probiotic & Digestive Enzymes" span={2} />
-              <SelectField label="Dosage Form *" value={form.dosageForm} onChange={(v) => set("dosageForm", v)} options={["Capsule", "Tablet", "Powder", "Softgel", "Gummy", "Liquid"]} />
-              <InputField label="Flavor" value={form.flavor} onChange={(v) => set("flavor", v)} placeholder="Cherry Strawberry" />
-              <InputField label="Serving Size" value={form.servingSize} onChange={(v) => set("servingSize", v)} type="number" placeholder="1" />
-              <SelectField label="Serving Unit" value={form.servingSizeUnit} onChange={(v) => set("servingSizeUnit", v)} options={["capsule", "tablet", "scoop", "packet", "softgel", "gummy"]} />
-              <InputField label="Servings Per Container" value={form.servingsPerContainer} onChange={(v) => set("servingsPerContainer", v)} type="number" placeholder="60" />
-              <InputField label="Count Per Bottle" value={form.countPerBottle} onChange={(v) => set("countPerBottle", v)} type="number" placeholder="60" />
-              <InputField label="Target Retail Price ($)" value={form.targetRetailPrice} onChange={(v) => set("targetRetailPrice", v)} type="number" placeholder="29.99" />
-            </div>
-          </div>
-        )}
-
-        {/* Step 3: Formula */}
-        {step === 3 && (
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">Formula & Ingredients</h2>
-            {form.formulaJson.length > 0 ? (
-              <div>
-                <p className="text-sm text-green-600 mb-4 font-medium">✓ {form.formulaJson.length} ingredients extracted by AI</p>
-                <div className="bg-gray-50 rounded-xl p-4 mb-4 max-h-60 overflow-y-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="text-gray-500 font-medium">
-                        <th className="text-left pb-2">Ingredient</th>
-                        <th className="text-right pb-2">Amount</th>
-                        <th className="text-left pb-2 pl-2">Unit</th>
-                        <th className="text-left pb-2 pl-2">DB Match</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {form.formulaJson.map((ing: any, i: number) => (
-                        <tr key={i}>
-                          <td className="py-1.5 font-medium text-gray-900">{ing.name}</td>
-                          <td className="py-1.5 text-right">{ing.amount}</td>
-                          <td className="py-1.5 pl-2 text-gray-500">{ing.unit}</td>
-                          <td className="py-1.5 pl-2">
-                            {ing.dbMatch ? (
-                              <span className="text-green-600">✓ {ing.dbMatch.name?.substring(0, 30)}</span>
-                            ) : (
-                              <span className="text-amber-600">⚠ No match</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-gray-500 mb-4">No ingredients extracted yet. You can add them manually or go back and upload a supplement facts panel.</p>
-            )}
-            <TextAreaField label="Other Ingredients" value={form.otherIngredients} onChange={(v) => set("otherIngredients", v)} placeholder="Mannitol, Xylitol, Croscarmellose Sodium, Natural Flavors..." />
-            <div className="mt-4">
-              <TextAreaField label="Special Requirements" value={form.specialRequirements} onChange={(v) => set("specialRequirements", v)} placeholder="e.g., Vegan capsule only, no artificial colors, fast-dissolving tablet..." />
-            </div>
-          </div>
-        )}
-
-        {/* Step 4: Packaging */}
-        {step === 4 && (
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-6">Packaging & Labeling</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <SelectField label="Bulk or Packaged" value={form.bulkOrPackaged} onChange={(v) => set("bulkOrPackaged", v)} options={["Bulk", "Packaged"]} />
-              <SelectField label="Primary Packaging" value={form.primaryPackaging} onChange={(v) => set("primaryPackaging", v)} options={["HDPE Bottle", "PET Bottle", "Glass Bottle", "Jar", "Stick Pack", "Gusset Bag", "Blister Pack"]} />
-              {(form.dosageForm === "Capsule") && (
-                <>
-                  <SelectField label="Capsule Type" value={form.capsuleType} onChange={(v) => set("capsuleType", v)} options={["Veggie", "Gelatin", "Pullulan"]} />
-                  <SelectField label="Capsule Size" value={form.capsuleSize} onChange={(v) => set("capsuleSize", v)} options={["3", "2", "1", "0", "00", "000"]} />
-                </>
-              )}
-              <SelectField label="Secondary Packaging" value={form.secondaryPackaging} onChange={(v) => set("secondaryPackaging", v)} options={["None", "Carton Box", "Shrink Wrap", "Bundle Wrap"]} />
-              <SelectField label="Label Status" value={form.labelStatus} onChange={(v) => set("labelStatus", v)} options={["Customer Provides", "Need Design", "Unlabeled"]} />
-            </div>
-          </div>
-        )}
-
-        {/* Step 5: Regulatory */}
-        {step === 5 && (
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-6">Regulatory & Compliance</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Certifications Required</label>
-                <div className="flex flex-wrap gap-2">
-                  {["cGMP", "NSF", "Organic", "Non-GMO", "Kosher", "Halal", "Vegan", "Gluten-Free"].map((cert) => (
-                    <button
-                      key={cert}
-                      onClick={() => {
-                        const certs = form.certifications.includes(cert)
-                          ? form.certifications.filter((c) => c !== cert)
-                          : [...form.certifications, cert];
-                        set("certifications", certs);
-                      }}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                        form.certifications.includes(cert)
-                          ? "bg-[#d10a11] text-white"
-                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                      }`}
-                    >
-                      {cert}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <InputField label="Target Markets" value={form.targetMarkets} onChange={(v) => set("targetMarkets", v)} placeholder="USA, Canada, EU" />
-              <InputField label="Allergen Statement" value={form.allergenStatement} onChange={(v) => set("allergenStatement", v)} placeholder="Not manufactured with wheat, soy, gluten..." />
-              <TextAreaField label="Structure/Function Claims" value={form.claims} onChange={(v) => set("claims", v)} placeholder="Supports digestive health..." />
-            </div>
-          </div>
-        )}
-
-        {/* Step 6: Manufacturing */}
-        {step === 6 && (
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-6">Manufacturing & Timeline</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <InputField label="Minimum Order Quantity" value={form.moq} onChange={(v) => set("moq", v)} type="number" placeholder="2000" />
-              <SelectField label="Target Timeline" value={form.targetTimeline} onChange={(v) => set("targetTimeline", v)} options={["4-6 weeks", "6-8 weeks", "8-12 weeks", "12+ weeks", "Rush (2-4 weeks)"]} />
-              <InputField label="Co-Packer Preference" value={form.coPackerPreference} onChange={(v) => set("coPackerPreference", v)} placeholder="Any, or specific manufacturer..." />
-              <InputField label="Deadline" value={form.deadline} onChange={(v) => set("deadline", v)} type="date" />
-              <TextAreaField label="Internal Notes" value={form.internalNotes} onChange={(v) => set("internalNotes", v)} placeholder="Internal team notes..." />
-              <TextAreaField label="Customer Notes" value={form.customerNotes} onChange={(v) => set("customerNotes", v)} placeholder="Notes from customer email..." />
-            </div>
-          </div>
-        )}
-
-        {/* Step 7: Review */}
-        {step === 7 && (
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-6">Review & Submit</h2>
-            <div className="space-y-4">
-              <ReviewSection title="Customer" items={[
-                ["Company", form.customerCompany], ["Contact", form.customerContact],
-                ["Email", form.customerEmail], ["Source", form.source], ["Priority", form.priority],
-              ]} />
-              <ReviewSection title="Product" items={[
-                ["Product", form.productName], ["Format", form.dosageForm], ["Flavor", form.flavor],
-                ["Serving", `${form.servingSize} ${form.servingSizeUnit}`],
-                ["Count/Bottle", form.countPerBottle], ["MOQ", form.moq],
-              ]} />
-              <ReviewSection title="Formula" items={[
-                ["Active Ingredients", `${form.formulaJson.length} extracted`],
-                ["Other Ingredients", form.otherIngredients || "—"],
-                ["Special Requirements", form.specialRequirements || "—"],
-              ]} />
-              <ReviewSection title="Packaging" items={[
-                ["Type", form.bulkOrPackaged], ["Container", form.primaryPackaging],
-                ["Label", form.labelStatus],
-              ]} />
-              <ReviewSection title="Regulatory" items={[
-                ["Certifications", form.certifications.join(", ") || "None"],
-                ["Markets", form.targetMarkets], ["Allergens", form.allergenStatement || "—"],
-              ]} />
-            </div>
-
-            {savedRfq ? (
-              <div className="mt-6 flex items-center gap-3 px-5 py-4 bg-green-50 border border-green-200 rounded-xl">
-                <Check className="h-5 w-5 text-green-600" />
-                <div>
-                  <p className="text-sm font-semibold text-green-800">RFQ created: {savedRfq.number}</p>
-                  <div className="flex gap-3 mt-1">
-                    <button onClick={() => router.push("/intake")} className="text-xs text-green-600 hover:underline">View all RFQs →</button>
-                    <button onClick={() => router.push("/quotes/new")} className="text-xs text-green-600 hover:underline">Build Quote →</button>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <button onClick={saveIntake} disabled={saving} className="mt-6 inline-flex items-center gap-2 px-6 py-3 bg-[#d10a11] text-white font-semibold rounded-xl hover:bg-[#a30a0f] transition-colors shadow-sm disabled:opacity-50">
-                {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Save className="h-5 w-5" />}
-                {saving ? "Saving..." : "Submit RFQ"}
-              </button>
-            )}
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-[#d10a11]" />
+            New RFQ
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">Paste a formula. We'll create the RFQ and parse the ingredients.</p>
+        </div>
+        {rfqNumber && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2 flex items-center gap-2">
+            <FileText className="h-4 w-4 text-emerald-700" />
+            <code className="font-mono text-sm font-semibold text-emerald-900">{rfqNumber}</code>
+            <span className="text-xs text-emerald-700">created</span>
           </div>
         )}
       </div>
 
-      {/* Navigation */}
-      <div className="flex justify-between mt-6">
-        <button onClick={prev} disabled={step === 0} className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 disabled:opacity-30 transition-colors">
-          <ChevronLeft className="h-4 w-4" /> Back
-        </button>
-        {step < STEPS.length - 1 && (
-          <button onClick={next} className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-gray-900 rounded-xl hover:bg-gray-800 transition-colors">
-            Next <ChevronRight className="h-4 w-4" />
+      {/* Magic Box */}
+      <section className="bg-white border border-slate-200 rounded-lg p-5 mb-4 shadow-sm">
+        <label htmlFor="magicbox" className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">
+          Quick Fill
+        </label>
+        <textarea
+          id="magicbox"
+          value={rawText}
+          onChange={(e) => setRawText(e.target.value)}
+          placeholder={`Paste a customer inquiry, a supplement facts panel, or just an ingredient list. Examples:
+
+  Elderberry 10:1 500mg + Vit C 90mg + Vit D 1000 IU + Zinc 11mg
+
+  Vitamin C 500mg
+  Zinc 15mg
+  Other Ingredients: Magnesium Stearate, Cellulose`}
+          rows={6}
+          className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm font-mono text-slate-900 focus:outline-none focus:border-[#d10a11] focus:ring-1 focus:ring-[#d10a11]/30 resize-y"
+        />
+        <div className="flex items-center justify-between mt-3">
+          <p className="text-xs text-slate-500">{rawText.length} characters</p>
+          <button
+            onClick={handleAnalyze}
+            disabled={analyzing}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-[#d10a11] hover:bg-[#a30a0f] disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-md transition-colors"
+          >
+            {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {rfqNumber ? "Re-analyze & Update" : "Analyze & Auto-Fill"}
           </button>
+        </div>
+        {parseHelper && (
+          <div className="mt-3 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-md px-3 py-2">{parseHelper}</div>
         )}
+        {formatWarning && (
+          <div className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+            <span>{formatWarning}</span>
+          </div>
+        )}
+      </section>
+
+      {/* Product Format */}
+      <section className="bg-white border border-slate-200 rounded-lg p-5 mb-4 shadow-sm">
+        <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">
+          Product Format <span className="text-[#d10a11]">*</span>
+        </label>
+        <div className="flex gap-2">
+          {SUPPORTED_FORMATS.map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setFormat(f)}
+              className={`px-4 py-2 text-sm font-semibold rounded-md border transition-colors ${
+                format === f
+                  ? "bg-[#d10a11] border-[#d10a11] text-white"
+                  : "bg-white border-slate-300 text-slate-700 hover:border-slate-400"
+              }`}
+            >
+              {f.charAt(0) + f.slice(1).toLowerCase()}
+            </button>
+          ))}
+        </div>
+        {!format && (
+          <p className="mt-2 text-xs text-slate-500">Required to submit to R&amp;D. Auto-detected from your pasted text when possible.</p>
+        )}
+      </section>
+
+      {/* Product Requirements */}
+      <section className="bg-white border border-slate-200 rounded-lg p-5 mb-4 shadow-sm">
+        <h2 className="text-sm font-semibold text-slate-800 mb-3">Product Requirements</h2>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Project Name" value={productName} onChange={setProductName} placeholder="e.g. Ascorbic Acid 500mg Capsules (auto-suggested)" />
+          <Field label="Serving Size" value={servingSize} onChange={setServingSize} placeholder="e.g. 1 capsule" />
+          <Field label="Servings / Container" value={servingsPerContainer} onChange={setServingsPerContainer} placeholder="e.g. 60" />
+          <Field label="Count per Bottle" value={countPerBottle} onChange={setCountPerBottle} placeholder="e.g. 60" />
+        </div>
+      </section>
+
+      {/* Formula */}
+      <section className="bg-white border border-slate-200 rounded-lg p-5 mb-4 shadow-sm">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-slate-800">
+            Formula <span className="text-xs font-normal text-slate-500">({activeCount} active{activeCount !== 1 && "s"})</span>
+          </h2>
+          <button onClick={addIngredientRow} className="inline-flex items-center gap-1 text-xs text-[#d10a11] hover:text-[#a30a0f] font-medium">
+            <Plus className="h-3.5 w-3.5" /> Add Line
+          </button>
+        </div>
+        {ingredients.length === 0 ? (
+          <div className="text-sm text-slate-500 text-center py-8 border border-dashed border-slate-200 rounded-md">
+            No ingredients yet. Paste a formula above and click <strong>Analyze</strong>, or <button onClick={addIngredientRow} className="text-[#d10a11] underline">add one manually</button>.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-600">
+                  <th className="text-left px-2 py-2 font-medium w-8">A/I</th>
+                  <th className="text-left px-2 py-2 font-medium">Ingredient</th>
+                  <th className="text-right px-2 py-2 font-medium w-24">Amount</th>
+                  <th className="text-left px-2 py-2 font-medium w-24">Unit</th>
+                  <th className="text-left px-2 py-2 font-medium">Notes</th>
+                  <th className="w-8"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {ingredients.map((ing) => (
+                  <tr key={ing.id} className={ing.isActive ? "" : "bg-slate-50"}>
+                    <td className="px-2 py-1.5">
+                      <button
+                        type="button"
+                        onClick={() => updateIngredient(ing.id, { isActive: !ing.isActive })}
+                        title={ing.isActive ? "Active ingredient — click to mark inactive" : "Inactive (excipient) — click to mark active"}
+                        className={`w-7 h-7 rounded text-xs font-bold ${
+                          ing.isActive ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"
+                        }`}
+                      >
+                        {ing.isActive ? "A" : "I"}
+                      </button>
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input
+                        value={ing.name}
+                        onChange={(e) => updateIngredient(ing.id, { name: e.target.value })}
+                        className="w-full px-2 py-1 border border-transparent hover:border-slate-200 focus:border-[#d10a11] focus:outline-none rounded text-sm"
+                      />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input
+                        value={ing.amount}
+                        onChange={(e) => updateIngredient(ing.id, { amount: e.target.value })}
+                        className="w-full px-2 py-1 border border-transparent hover:border-slate-200 focus:border-[#d10a11] focus:outline-none rounded text-sm text-right tabular-nums"
+                      />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input
+                        value={ing.unit}
+                        onChange={(e) => updateIngredient(ing.id, { unit: e.target.value })}
+                        className="w-full px-2 py-1 border border-transparent hover:border-slate-200 focus:border-[#d10a11] focus:outline-none rounded text-sm"
+                      />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input
+                        value={ing.notes}
+                        onChange={(e) => updateIngredient(ing.id, { notes: e.target.value })}
+                        placeholder="e.g. 10:1 extract"
+                        className="w-full px-2 py-1 border border-transparent hover:border-slate-200 focus:border-[#d10a11] focus:outline-none rounded text-sm text-slate-600"
+                      />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <button onClick={() => removeIngredient(ing.id)} className="text-slate-400 hover:text-red-600">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* Packaging */}
+      <section className="bg-white border border-slate-200 rounded-lg p-5 mb-4 shadow-sm">
+        <h2 className="text-sm font-semibold text-slate-800 mb-3">Packaging</h2>
+        <textarea
+          value={packagingNotes}
+          onChange={(e) => setPackagingNotes(e.target.value)}
+          placeholder="e.g. PET amber 150cc, 38mm CR cap, induction seal, desiccant"
+          rows={2}
+          className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-[#d10a11] focus:ring-1 focus:ring-[#d10a11]/30"
+        />
+      </section>
+
+      {/* Customer & Account (LAST — enrichment, not gating) */}
+      <section className="bg-white border border-slate-200 rounded-lg p-5 mb-4 shadow-sm">
+        <h2 className="text-sm font-semibold text-slate-800 mb-1">Customer &amp; Account</h2>
+        <p className="text-xs text-slate-500 mb-3">Optional. Not required to create or submit the RFQ.</p>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Company" value={customer.customerCompany} onChange={(v) => setCustomer({ ...customer, customerCompany: v })} placeholder="None" />
+          <Field label="Contact Name" value={customer.customerContact} onChange={(v) => setCustomer({ ...customer, customerContact: v })} placeholder="None" />
+          <Field label="Email" value={customer.customerEmail} onChange={(v) => setCustomer({ ...customer, customerEmail: v })} placeholder="None" />
+          <Field label="Phone" value={customer.customerPhone} onChange={(v) => setCustomer({ ...customer, customerPhone: v })} placeholder="None" />
+        </div>
+      </section>
+
+      {/* Sticky action bar */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-6 py-3 flex items-center justify-between z-10">
+        <div className="flex items-center gap-3">
+          {rfqNumber ? (
+            <code className="font-mono text-xs text-slate-700">{rfqNumber}</code>
+          ) : (
+            <span className="text-xs text-slate-500">Click Analyze to create the RFQ.</span>
+          )}
+          {rfqNumber && (
+            <span className="text-xs text-slate-500">
+              {format ? `Format: ${format.charAt(0) + format.slice(1).toLowerCase()}` : "Format: not set"} · {activeCount} active{activeCount !== 1 && "s"}
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={handleSave}
+            disabled={!rfqId || pending}
+            className="inline-flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium rounded-md transition-colors"
+          >
+            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Save Changes
+          </button>
+          <button
+            onClick={handleSubmitToRD}
+            disabled={!submitEnabled || pending}
+            title={!submitEnabled ? "Set a format and add at least 1 ingredient to submit." : "Submit to R&D"}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-[#d10a11] hover:bg-[#a30a0f] disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-md transition-colors"
+          >
+            <Send className="h-4 w-4" />
+            Submit to R&amp;D
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Sub-Components ─────────────────────────────────────────────────────
-
-function InputField({ label, value, onChange, placeholder, type, span }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string; span?: number }) {
-  return (
-    <div className={span === 2 ? "col-span-2" : ""}>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-      <input type={type || "text"} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="input-field" />
-    </div>
-  );
-}
-
-function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[] }) {
+function Field({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-      <select value={value} onChange={(e) => onChange(e.target.value)} className="input-field">
-        {options.map((o: string) => <option key={o} value={o}>{o}</option>)}
-      </select>
+      <label className="block text-xs font-medium text-slate-600 uppercase tracking-wide mb-1">{label}</label>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-[#d10a11] focus:ring-1 focus:ring-[#d10a11]/30"
+      />
     </div>
   );
 }
-
-function TextAreaField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
-  return (
-    <div className="col-span-2">
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-      <textarea value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} rows={3} className="input-field resize-none" />
-    </div>
-  );
-}
-
-function ReviewSection({ title, items }: { title: string; items: [string, string][] }) {
-  return (
-    <div className="bg-gray-50 rounded-xl p-4">
-      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{title}</h3>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-        {items.map(([k, v]) => (
-          <div key={k}>
-            <p className="text-[10px] text-gray-400">{k}</p>
-            <p className="text-sm font-medium text-gray-900">{v || "—"}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function capitalize(s: string) { return s.charAt(0).toUpperCase() + s.slice(1); }

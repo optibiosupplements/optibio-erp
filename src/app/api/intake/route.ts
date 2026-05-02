@@ -2,15 +2,9 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { rfqs } from "@/lib/db/schema";
 import { desc, count } from "drizzle-orm";
+import { generateRfqNumber } from "@/domains/intake/id-generator";
 
 export const dynamic = "force-dynamic";
-
-function generateRfqNumber(): string {
-  const now = new Date();
-  const date = now.toISOString().slice(0, 10).replace(/-/g, "");
-  const seq = String(Math.floor(Math.random() * 999) + 1).padStart(3, "0");
-  return `RFQ-${date}-${seq}`;
-}
 
 /** GET /api/intake — list all RFQs */
 export async function GET() {
@@ -26,7 +20,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const rfqNumber = generateRfqNumber();
+    const rfqNumber = await generateRfqNumber();
 
     const [rfq] = await db
       .insert(rfqs)

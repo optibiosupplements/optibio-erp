@@ -1,0 +1,9 @@
+{
+  "_source": "Desktop/0. WORK/1.CUSTOMERS/Joe Seminteli/Hydration Stickpack Quote.xlsx",
+  "_note": "Out-of-scope test. Stick packs are not supported in Phase 1. The Magic Box must detect this format and route to a 'quote manually' message — RFQ row should still be created (status=Draft) but Submit-to-R&D must be disabled.",
+  "rawIntakeText": "Hydration Stickpack — 8.5g serving — Dextrose Monohydrate, Sodium Chloride, Potassium Citrate (Granular), Citric Acid Anhydrous Fine Granular, Sodium Citrate, Natural and Artificial Fruit Punch Flavor",
+  "expectedFormat": "STICKPACK_OOS",
+  "expectedRoute": "format-not-supported",
+  "expectedSubmitDisabled": true,
+  "expectedRfqStillCreated": true
+}

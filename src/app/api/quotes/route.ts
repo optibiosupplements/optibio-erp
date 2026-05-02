@@ -28,6 +28,8 @@ export async function POST(request: Request) {
     const {
       productName,
       customerName,
+      customerId,
+      formulationId,
       dosageForm,
       servingSize,
       containerCount,
@@ -40,7 +42,9 @@ export async function POST(request: Request) {
       notes,
     } = body;
 
-    // Create the quote
+    // Create the quote — link to customer + formulation when provided so the
+    // xlsx/pdf exporters can join through and read structured data instead of
+    // parsing the notes blob.
     const quoteNumber = generateQuoteNumber();
     const validUntil = new Date();
     validUntil.setDate(validUntil.getDate() + 30);
@@ -52,6 +56,8 @@ export async function POST(request: Request) {
         status: "Draft",
         version: 1,
         validUntil: validUntil.toISOString().split("T")[0],
+        customerId: customerId ?? null,
+        formulationId: formulationId ?? null,
         notes: JSON.stringify({
           productName,
           customerName,
@@ -67,19 +73,22 @@ export async function POST(request: Request) {
       })
       .returning();
 
-    // Save tiers
+    // Save tiers — accept either {tierQuantity} (pricing-engine output) or {quantity} (legacy).
+    // Same with COGS: either flat fields or nested under tier.cogs.
     if (tierData && Array.isArray(tierData)) {
       for (const tier of tierData) {
+        const qty = tier.tierQuantity ?? tier.quantity;
+        const cogs = tier.cogs ?? tier;
         const [savedTier] = await db
           .insert(quoteTiers)
           .values({
             quoteId: quote.id,
-            tierQuantity: tier.quantity,
-            rawMaterialCost: String(tier.rawMaterialCost),
-            manufacturingCost: String(tier.manufacturingCost),
-            packagingCost: String(tier.packagingCost),
-            overheadCost: String(tier.overheadCost),
-            cogsPerUnit: String(tier.cogsPerUnit),
+            tierQuantity: qty,
+            rawMaterialCost: String(cogs.rawMaterialCost ?? 0),
+            manufacturingCost: String(cogs.manufacturingCost ?? 0),
+            packagingCost: String(cogs.packagingCost ?? 0),
+            overheadCost: String(cogs.overheadCost ?? 0),
+            cogsPerUnit: String(cogs.totalCogs ?? tier.cogsPerUnit ?? 0),
             marginPct: String(tier.marginPct),
             pricePerUnit: String(tier.pricePerUnit),
             totalBatchPrice: String(tier.totalBatchPrice),

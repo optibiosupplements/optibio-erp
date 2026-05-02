@@ -1,0 +1,33 @@
+{
+  "_source": "Desktop/0. WORK/1.CUSTOMERS/ASHER/NEW RFQ/Price Quote 12.31.25.docx",
+  "_note": "Real Asher Elderberry quote from 2025-12-31. Used as the canonical pricing-engine ship-gate test.",
+  "rawIntakeText": "Elderberry 10:1 500mg + Vit C 90mg + Vit D 1000 IU + Zinc 11mg",
+  "expectedFormat": "CAPSULE",
+  "expectedActiveCount": 4,
+  "expectedActives": [
+    { "name": "Elderberry", "amount": "500", "unit": "mg", "notesContains": "10:1" },
+    { "name": "Vit C", "amount": "90", "unit": "mg" },
+    { "name": "Vit D", "amount": "1000", "unit": "IU" },
+    { "name": "Zinc", "amount": "11", "unit": "mg" }
+  ],
+  "realPricing": {
+    "tier2k": { "pricePerBottle": 7.90, "currency": "USD" },
+    "tier5k": { "pricePerBottle": 7.15, "currency": "USD" },
+    "capsulesPerServing": 1,
+    "servingsPerBottle": 60,
+    "capsuleSize": "00",
+    "shellType": "Vegetarian (HPMC)",
+    "scopeIncludes": [
+      "Raw Materials (active + standard excipients)",
+      "Vegetarian Capsules",
+      "Encapsulation & QA labor",
+      "Packaging Materials (bottle, cap, induction seal, desiccant/cotton)",
+      "Finished Goods Packaging labor",
+      "Basic Batch Testing"
+    ]
+  },
+  "shipGate": {
+    "tolerance": "±10%",
+    "tier2kAcceptableRange": [7.11, 8.69]
+  }
+}

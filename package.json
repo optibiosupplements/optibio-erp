@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "seed": "bun scripts/seed.ts",
+    "seed:cs": "bun scripts/seed-customers-suppliers.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",

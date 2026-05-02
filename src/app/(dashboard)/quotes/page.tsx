@@ -79,7 +79,7 @@ export default async function QuotesPage() {
                 return (
                   <tr key={q.id} className="hover:bg-gray-50/50 transition-colors">
                     <td className="px-5 py-4">
-                      <span className="font-mono font-semibold text-gray-900">{q.quoteNumber}</span>
+                      <Link href={`/quotes/${q.id}`} className="font-mono font-semibold text-gray-900 hover:text-[#d10a11]">{q.quoteNumber}</Link>
                     </td>
                     <td className="px-5 py-4 text-gray-700">{meta.productName || "—"}</td>
                     <td className="px-5 py-4 text-gray-700">{meta.customerName || "—"}</td>
