@@ -350,3 +350,174 @@ export const activities = pgTable("activities", {
   completedAt: timestamp("completed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// ============================================================================
+// PHASE 2 — ORDERS, BATCHES, COAs, SHIPPING, DOCUMENTS
+// (See docs/PHASE-2-PLAN.md)
+// ============================================================================
+
+export const purchaseOrders = pgTable("purchase_orders", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  poNumber: text("po_number").unique().notNull(),
+  customerId: uuid("customer_id").references(() => customers.id),
+  acceptedQuoteId: uuid("accepted_quote_id").references(() => quotes.id),
+  customerPoNumber: text("customer_po_number"),
+  tierQuantity: integer("tier_quantity").notNull(),
+  unitPrice: numeric("unit_price", { precision: 10, scale: 4 }).notNull(),
+  totalValue: numeric("total_value", { precision: 12, scale: 2 }).notNull(),
+  status: text("status").notNull().default("Pending"),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  targetShipDate: date("target_ship_date"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const poLineItems = pgTable("po_line_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  purchaseOrderId: uuid("purchase_order_id")
+    .references(() => purchaseOrders.id, { onDelete: "cascade" })
+    .notNull(),
+  formulationId: uuid("formulation_id").references(() => formulations.id),
+  quantity: integer("quantity").notNull(),
+  unitPrice: numeric("unit_price", { precision: 10, scale: 4 }).notNull(),
+  lineTotal: numeric("line_total", { precision: 12, scale: 2 }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const productionRuns = pgTable("production_runs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  batchNumber: text("batch_number").unique().notNull(),
+  formulationId: uuid("formulation_id").references(() => formulations.id),
+  purchaseOrderId: uuid("purchase_order_id").references(() => purchaseOrders.id),
+  targetBatchSize: integer("target_batch_size").notNull(),
+  actualBatchSize: integer("actual_batch_size"),
+  startDate: date("start_date"),
+  completionDate: date("completion_date"),
+  status: text("status").notNull().default("Scheduled"),
+  manufacturingSite: text("manufacturing_site").default("Nutra Solutions USA — 1019 Grand Blvd, Deer Park, NY"),
+  leadQcAnalyst: text("lead_qc_analyst"),
+  releaseQaManager: text("release_qa_manager"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const rawMaterialLots = pgTable("raw_material_lots", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  lotNumber: text("lot_number").notNull(),
+  ingredientId: uuid("ingredient_id")
+    .references(() => ingredients.id)
+    .notNull(),
+  supplierId: uuid("supplier_id").references(() => suppliers.id),
+  quantityKg: numeric("quantity_kg", { precision: 12, scale: 4 }).notNull(),
+  receivedDate: date("received_date").notNull(),
+  expiryDate: date("expiry_date"),
+  manufacturingDateAtSupplier: date("manufacturing_date_at_supplier"),
+  supplierCoaUrl: text("supplier_coa_url"),
+  costPerKgActual: numeric("cost_per_kg_actual", { precision: 10, scale: 2 }),
+  status: text("status").notNull().default("Quarantine"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const lotMovements = pgTable("lot_movements", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  rawMaterialLotId: uuid("raw_material_lot_id")
+    .references(() => rawMaterialLots.id)
+    .notNull(),
+  productionRunId: uuid("production_run_id").references(() => productionRuns.id),
+  quantityKg: numeric("quantity_kg", { precision: 12, scale: 4 }).notNull(),
+  movementType: text("movement_type").notNull(),
+  movementDate: timestamp("movement_date", { withTimezone: true }).defaultNow().notNull(),
+  operator: text("operator"),
+  notes: text("notes"),
+});
+
+export const finishedProductLots = pgTable("finished_product_lots", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  lotNumber: text("lot_number").unique().notNull(),
+  formulationId: uuid("formulation_id")
+    .references(() => formulations.id)
+    .notNull(),
+  productionRunId: uuid("production_run_id").references(() => productionRuns.id),
+  quantityUnits: integer("quantity_units").notNull(),
+  manufacturingDate: date("manufacturing_date").notNull(),
+  expirationDate: date("expiration_date"),
+  stabilityProtocol: text("stability_protocol"),
+  productCode: text("product_code"),
+  status: text("status").notNull().default("In QC"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const finishedProductCoas = pgTable("finished_product_coas", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  coaNumber: text("coa_number").unique().notNull(),
+  finishedProductLotId: uuid("finished_product_lot_id")
+    .references(() => finishedProductLots.id)
+    .notNull(),
+  revision: integer("revision").notNull().default(0),
+  supersededByCoaId: uuid("superseded_by_coa_id"),
+  disposition: text("disposition").notNull().default("Approved for Release"),
+  qcAnalyst: text("qc_analyst"),
+  qcAnalystSignatureDate: date("qc_analyst_signature_date"),
+  qcManager: text("qc_manager"),
+  qcManagerSignatureDate: date("qc_manager_signature_date"),
+  qaRelease: text("qa_release"),
+  qaReleaseSignatureDate: date("qa_release_signature_date"),
+  labSampleId: text("lab_sample_id"),
+  labAccreditation: text("lab_accreditation").default("ISO 17025:2017"),
+  testingLab: text("testing_lab").default("Nutra Solutions USA — In-House QC Lab"),
+  pdfUrl: text("pdf_url"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const coaTestResults = pgTable("coa_test_results", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  coaId: uuid("coa_id")
+    .references(() => finishedProductCoas.id, { onDelete: "cascade" })
+    .notNull(),
+  category: text("category").notNull(),
+  testName: text("test_name").notNull(),
+  specification: text("specification").notNull(),
+  result: text("result").notNull(),
+  pctOfLabelClaim: numeric("pct_of_label_claim", { precision: 6, scale: 2 }),
+  method: text("method").notNull(),
+  status: text("status").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const shipments = pgTable("shipments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  purchaseOrderId: uuid("purchase_order_id")
+    .references(() => purchaseOrders.id)
+    .notNull(),
+  finishedProductLotId: uuid("finished_product_lot_id").references(() => finishedProductLots.id),
+  quantityUnits: integer("quantity_units").notNull(),
+  carrier: text("carrier"),
+  trackingNumber: text("tracking_number"),
+  shipDate: date("ship_date"),
+  deliveredDate: date("delivered_date"),
+  customerSignatureUrl: text("customer_signature_url"),
+  status: text("status").notNull().default("Scheduled"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const documents = pgTable("documents", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  kind: text("kind").notNull(),
+  url: text("url").notNull(),
+  filename: text("filename"),
+  sizeBytes: integer("size_bytes"),
+  mimeType: text("mime_type"),
+  relatedTable: text("related_table"),
+  relatedId: uuid("related_id"),
+  uploadedBy: text("uploaded_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
