@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { invoices, invoiceLineItems, customers, purchaseOrders, payments } from "@/lib/db/schema";
 import { eq, asc, desc } from "drizzle-orm";
 import Link from "next/link";
-import { Receipt, ChevronLeft, ShoppingCart } from "lucide-react";
+import { Receipt, ChevronLeft, ShoppingCart, FileText } from "lucide-react";
 import { notFound } from "next/navigation";
 import { RecordPaymentButton } from "./actions";
 
@@ -52,9 +52,18 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
             {po && <span>· PO <Link href={`/orders/${po.id}`} className="font-mono text-slate-700 hover:text-[#d10a11]">{po.poNumber}</Link></span>}
           </div>
         </div>
-        {!isPaid && balance > 0 && (
-          <RecordPaymentButton invoiceId={id} balance={balance} />
-        )}
+        <div className="flex gap-2 items-start">
+          <a
+            href={`/api/invoices/${id}/pdf`}
+            target="_blank"
+            className="inline-flex items-center gap-2 px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-md"
+          >
+            <FileText className="h-4 w-4" /> Download PDF
+          </a>
+          {!isPaid && balance > 0 && (
+            <RecordPaymentButton invoiceId={id} balance={balance} />
+          )}
+        </div>
       </div>
 
       <section className="bg-white border border-slate-200 rounded-lg p-5 mb-4 shadow-sm">

@@ -6,7 +6,7 @@ import { useState } from "react";
 import {
   LayoutDashboard, Inbox, FlaskConical, FileText, ShoppingCart, Factory, Package,
   FileCheck, Users, Building2, Pill, Settings, PanelLeftClose, PanelLeftOpen, LogOut,
-  TrendingUp, Truck, Receipt, DollarSign, CheckSquare, PackageOpen,
+  TrendingUp, Truck, Receipt, DollarSign, CheckSquare, PackageOpen, Lightbulb, RotateCcw,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -27,6 +27,8 @@ const NAV_ITEMS = [
   { href: "/suppliers", label: "Suppliers", icon: Building2, match: (p: string) => p.startsWith("/suppliers") },
   { href: "/ingredients", label: "Ingredients", icon: Pill, match: (p: string) => p.startsWith("/ingredients") },
   { href: "/raw-material-lots", label: "Raw Lots", icon: PackageOpen, match: (p: string) => p.startsWith("/raw-material-lots") },
+  { href: "/retro", label: "Retro", icon: RotateCcw, match: (p: string) => p.startsWith("/retro") },
+  { href: "/learnings", label: "Learnings", icon: Lightbulb, match: (p: string) => p.startsWith("/learnings") },
   { href: "/settings", label: "Settings", icon: Settings, match: (p: string) => p.startsWith("/settings") },
 ];
 

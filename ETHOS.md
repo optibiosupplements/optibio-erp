@@ -1,47 +1,151 @@
 # Optibio ERP Builder Ethos
 
-Adapted from gstack's ETHOS for our specific business: a one-person nutraceutical brokerage replacing a 13-attempt sprawl of half-finished apps with one production tool.
+Adapted from Garry Tan's `gstack` ethos for our specific domain: a one-operator
+nutraceutical brokerage replacing a 13-attempt sprawl of half-finished apps with
+one production tool. cGMP-bound. Real customers. Real money.
 
 ---
 
-## 1. Boil the Lake (in our context)
+## 1. Boil OUR Lakes
 
-Cheap to ship the complete flow with AI. Don't half-finish features — half-finished is what got us 13 dead repos.
+AI makes completeness cheap. Don't half-finish features — half-finished is what
+gave us 13 dead repos.
 
-- **Lake:** A complete RFQ→Quote→PDF flow with all 6 Phase-1 features wired up. Boil it.
-- **Ocean:** A multi-tenant SaaS version with billing and customer self-service. Out of scope until Phase 3.
-- Anti-pattern: shipping the Magic Box without the parser, or the parser without the seed data, or the seed data without the schema migrations.
+A "lake" in our domain is something AI can boil end-to-end in minutes:
+- Schema migration + seed data + UI + API + tests for one entity
+- Excel exports for a release document with all 5 NS-USA-style sheets
+- Real-customer regression fixtures from `0. WORK/1.CUSTOMERS/`
 
-## 2. Real data, real customers, real tests
+An "ocean" is everything else:
+- Multi-tenant SaaS with billing (out of scope)
+- Customer portal with self-service quoting (Phase 4+)
+- Multi-currency, multi-site, multi-language (post-IPO)
 
-We have 13 prior attempts because each one was built against fake data and demo customers. **Never again.**
+**Rule:** When the difference between 70% and 100% is 5 minutes — always 100%.
+When it's 5 hours — explicitly defer with a TODO.
 
-- Master data is seeded from `data/OptiBio_Master_Ingredients_CLEANED.xlsx` + Desktop NUTRA ERP master sheets. ~2,567 ingredients.
-- Regression tests use real customer RFQs we've already quoted: Asher Elderberry/Beet/Berberine/Magnesium, Joe Hydration (out-of-scope routing test).
-- The ship gate: our generated quote for Asher Elderberry @ 2K bottles must match the real $7.90/bottle figure within ±10%. If it doesn't, the pricing engine isn't done.
+---
 
-## 3. Two AI personas, two boundaries
+## 2. Real Data, Real Customers, Real Tests
 
-Eva and Danny do different jobs. Don't blur them. Eva talks to humans about RFQs and customers. Danny does GMP-compliant bench formulation. If Eva starts trying to size capsules, or Danny starts asking about the customer's email, fix the prompt.
+We have 3,081 ingredients seeded from your master sheet. We have 5 real
+customers (Asher, Joe, Lin+Jeremy, HGW, Pedialyte) with real folder histories
+on Desktop. We have a canonical NS-3318C COA template.
 
-## 4. Phase 1 scope discipline
+**Rule:** Never demo with mock data. Every feature gets exercised against real
+customer data before merge. Asher Elderberry @ 2K bottles is the canonical
+ship-gate.
 
-Capsules + tablets only. No powders, no stick packs, no gummies, no softgels, no ODT — even if a real customer asks. Route them to manual quoting until Phase 2.
+---
 
-The reason: 13 repos failed because scope expanded faster than capability. We protect Phase 1 ruthlessly.
+## 3. Two AI Personas, Two Boundaries
 
-## 5. Pre-existing work is a feature, not a liability
+**Eva** = Intake & CRM specialist. Talks to humans about RFQs and customers.
+Lives in `src/components/deal/EvaChat.tsx` + `src/app/api/agent/route.ts`.
 
-`supplement-quote-app26` already has a working ingredient parser, capsule quote engine, excipient calculator, CRM, RFQ flow, and 14 unit tests. Port it. Don't rewrite.
+**Danny** = Bench formulator. GMP-compliant. Sizes capsules, computes excipients,
+flags manufacturability risks. Lives in `src/domains/agents/danny.formulator.ts`.
 
-## 6. Plan files over commit-message checkpoints
+**Rule:** Don't blur their roles. If Eva starts sizing capsules, or Danny starts
+asking about customer email — fix the prompt.
 
-`supplement-quote-app26` had 30+ "Checkpoint:" commits. None of them tell the story. Every non-trivial change in this repo gets `/autoplan` first; the plan file ships in the PR description.
+---
 
-## 7. Decisions belong in the repo, not in conversation
+## 4. The Six SMEs Review Every Non-Trivial Plan
 
-When we make a non-obvious decision (e.g. "ditch powder format from Phase 1", "use Active Content % not Assay %", "RFQ created before parser runs"), it goes in `ARCHITECTURE.md` or the relevant code comment. Future-you and future-Claude need it.
+Garry uses 4 (CEO, Eng, Design, DevEx). For nutra ERP we add **Operations**
+(factory-floor reality) and **Regulatory/QA** (21 CFR 111 compliance).
 
-## 8. The ship gate is real Asher pricing
+| Role | Lens |
+|---|---|
+| 🎩 **CEO** (Panna's revenue voice) | Does this close more sales? Does it widen margins? |
+| 🔧 **Eng Manager** | Schema integrity. Performance. Edge cases. Type safety. |
+| 🎨 **Designer** | High-density B2B. Tabular data. No 1990s Excel UI. |
+| 🏭 **Operations** | Factory floor — lot traceability, batch records, inventory accuracy |
+| 📋 **Regulatory/QA** | 21 CFR 111. Amazon compliance. ISO 17025. Append-only COAs. |
+| 🛒 **Customer** | What does Asher / Joe see? Can they prove provenance? Can they reorder? |
 
-Until our generated Asher Elderberry quote matches reality within ±10%, the pricing engine is broken — no matter how green the unit tests are. Calibrate margin/overhead/manufacturing/packaging until the canonical case matches.
+**Rule:** Every PR larger than 50 LOC gets a panel review in
+`docs/PHASE-N-PLAN.md` BEFORE the code is written. See `docs/REVIEW-PROCESS.md`.
+
+---
+
+## 5. Search Before Building (3 Layers)
+
+Garry's three layers, applied to OptiBio:
+
+**Layer 1 — Tried and true (don't reinvent).** Drizzle, Postgres, Next.js,
+Anthropic SDK, xlsx library, USP standards, FDA cGMP rules. We didn't write a
+formulation engine from scratch — we ported `supplement-quote-app26`'s tested
+parser + sizer + excipient calc.
+
+**Layer 2 — New and popular (scrutinize).** Vercel AI SDK, Drizzle Studio,
+shadcn/ui patterns. Use them but verify they survive our specific use cases
+before going wide.
+
+**Layer 3 — First principles (prize above all).** When industry "best practice"
+contradicts what's actually true for your business — name it. Examples we've
+already booked:
+- "Phase 1: Capsules + Tablets only" (PRD discipline beats feature creep)
+- "RFQ created BEFORE parser runs" (never block the user)
+- "Active Content %, never Assay %" (the prior 8 attempts had this wrong)
+- "COAs are append-only after sign" (21 CFR 111 + sane regret-recovery)
+
+When you make a Layer 3 decision, write it in `ARCHITECTURE.md` invariants
+section. Future-you (and future-Claude) need the *why*.
+
+---
+
+## 6. Phase 1 Scope Discipline
+
+Capsules + Tablets + Powder. Stickpacks/Gummies/Liquids/Softgels/ODT route to a
+"format not yet supported" warning even when a real customer asks. **The reason
+13 prior repos failed: scope expanded faster than capability.**
+
+When Joe (real customer) asks for stickpacks — we say "Phase 2." We do not
+quietly add gummy support. We protect Phase 1 ruthlessly.
+
+---
+
+## 7. Plans Over Checkpoint Commits
+
+`supplement-quote-app26` had 30+ "Checkpoint:" commits. None of them tell the
+story. Every non-trivial change here gets a `docs/PHASE-N-PLAN.md` first. The
+plan is the PR description. Future-you reads it; future-customers don't see it.
+
+---
+
+## 8. Decisions Belong in the Repo
+
+When you make a non-obvious choice — write it down where future-you will find
+it without searching:
+- Architectural decisions → `ARCHITECTURE.md` invariants
+- Cross-session learnings → `docs/LEARNINGS.md`
+- Feature plans → `docs/PHASE-N-PLAN.md`
+- One-off comments only when the *why* would surprise a reader
+
+The conversation history disappears. The repo is forever.
+
+---
+
+## 9. The Ship Gate Is Real Asher Pricing
+
+Until our generated Asher Elderberry quote @ 2K bottles matches reality
+(~$7.90/bottle) within ±10%, the pricing engine is broken — no matter how green
+the unit tests are. Calibrate margin/overhead/manufacturing/packaging until the
+canonical case matches.
+
+Same principle for every feature: there is a canonical real-world case it must
+satisfy before merge. List it in the plan doc.
+
+---
+
+## 10. Continuous Improvement Loop
+
+After every shipped feature:
+1. `/document-release` — update `CHANGELOG.md`, `ARCHITECTURE.md`, `TODOS.md`
+2. Update `docs/LEARNINGS.md` if anything non-obvious was discovered
+3. Weekly: open `/retro` in the app, review the KPI deltas
+
+**The point of doing all this is to do less of it next time.** Every learning
+captured today is a question you don't answer twice.
