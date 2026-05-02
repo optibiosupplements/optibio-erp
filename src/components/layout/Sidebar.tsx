@@ -6,12 +6,13 @@ import { useState } from "react";
 import {
   LayoutDashboard, Inbox, FlaskConical, FileText, ShoppingCart, Factory, Package,
   FileCheck, Users, Building2, Pill, Settings, PanelLeftClose, PanelLeftOpen, LogOut,
-  TrendingUp, Truck,
+  TrendingUp, Truck, Receipt, DollarSign, CheckSquare, PackageOpen,
 } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, match: (p: string) => p === "/" },
   { href: "/pipeline", label: "Pipeline", icon: TrendingUp, match: (p: string) => p.startsWith("/pipeline") },
+  { href: "/tasks", label: "Tasks", icon: CheckSquare, match: (p: string) => p.startsWith("/tasks") },
   { href: "/intake", label: "Intake", icon: Inbox, match: (p: string) => p.startsWith("/intake") },
   { href: "/formulations", label: "The Lab", icon: FlaskConical, match: (p: string) => p.startsWith("/formulations") },
   { href: "/quotes", label: "Quotes", icon: FileText, match: (p: string) => p.startsWith("/quotes") },
@@ -20,9 +21,12 @@ const NAV_ITEMS = [
   { href: "/lots", label: "Lots", icon: Package, match: (p: string) => p.startsWith("/lots") },
   { href: "/coas", label: "COAs", icon: FileCheck, match: (p: string) => p.startsWith("/coas") },
   { href: "/shipments", label: "Shipments", icon: Truck, match: (p: string) => p.startsWith("/shipments") },
+  { href: "/invoices", label: "Invoices", icon: Receipt, match: (p: string) => p.startsWith("/invoices") },
+  { href: "/payments", label: "Payments", icon: DollarSign, match: (p: string) => p.startsWith("/payments") },
   { href: "/customers", label: "Customers", icon: Users, match: (p: string) => p.startsWith("/customers") },
   { href: "/suppliers", label: "Suppliers", icon: Building2, match: (p: string) => p.startsWith("/suppliers") },
   { href: "/ingredients", label: "Ingredients", icon: Pill, match: (p: string) => p.startsWith("/ingredients") },
+  { href: "/raw-material-lots", label: "Raw Lots", icon: PackageOpen, match: (p: string) => p.startsWith("/raw-material-lots") },
   { href: "/settings", label: "Settings", icon: Settings, match: (p: string) => p.startsWith("/settings") },
 ];
 
