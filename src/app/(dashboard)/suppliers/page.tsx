@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Truck, Plus, Loader2 } from "lucide-react";
+import Link from "next/link";
 
 interface Supplier {
   id: string;
@@ -100,7 +101,9 @@ export default function SuppliersPage() {
             <tbody className="divide-y divide-gray-100">
               {suppliers.map((s) => (
                 <tr key={s.id} className="hover:bg-gray-50/50 transition-colors">
-                  <td className="px-5 py-4 font-semibold text-gray-900">{s.companyName}</td>
+                  <td className="px-5 py-4 font-semibold text-gray-900">
+                    <Link href={`/suppliers/${s.id}`} className="hover:text-[#d10a11]">{s.companyName}</Link>
+                  </td>
                   <td className="px-5 py-4 text-gray-700">{s.contactName || "—"}</td>
                   <td className="px-5 py-4 text-gray-700">{s.email || "—"}</td>
                   <td className="px-5 py-4 text-gray-700">{s.phone || "—"}</td>

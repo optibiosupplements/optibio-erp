@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { customers } from "@/lib/db/schema";
 import { desc, count } from "drizzle-orm";
 import { Users } from "lucide-react";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +54,9 @@ export default async function CustomersPage() {
             <tbody className="divide-y divide-gray-100">
               {allCustomers.map((c) => (
                 <tr key={c.id} className="hover:bg-gray-50/50 transition-colors">
-                  <td className="px-5 py-4 font-semibold text-gray-900">{c.companyName}</td>
+                  <td className="px-5 py-4 font-semibold text-gray-900">
+                    <Link href={`/customers/${c.id}`} className="hover:text-[#d10a11]">{c.companyName}</Link>
+                  </td>
                   <td className="px-5 py-4 text-gray-700">{c.contactName || "—"}</td>
                   <td className="px-5 py-4 text-gray-700">{c.email || "—"}</td>
                   <td className="px-5 py-4">
