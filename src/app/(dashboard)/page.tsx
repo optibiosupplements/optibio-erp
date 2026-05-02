@@ -9,6 +9,7 @@ import {
   Inbox, FlaskConical, FileText, ShoppingCart, Factory, Package, FileCheck,
   TrendingUp, Plus, ArrowRight,
 } from "lucide-react";
+import { BusinessFlowChart } from "@/components/BusinessFlowChart";
 
 export const dynamic = "force-dynamic";
 
@@ -111,6 +112,11 @@ export default async function HomePage() {
             <Plus className="h-4 w-4" /> New RFQ
           </Link>
         </div>
+      </div>
+
+      {/* Business Flow chart */}
+      <div className="mb-4">
+        <BusinessFlowChart />
       </div>
 
       {/* KPI grid */}

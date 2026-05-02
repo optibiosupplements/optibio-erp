@@ -1,11 +1,11 @@
 import { db } from "@/lib/db";
 import {
   rfqs, formulations, quotes, purchaseOrders, productionRuns,
-  finishedProductLots, finishedProductCoas, invoices, payments, shipments, customers,
+  finishedProductLots, finishedProductCoas, invoices, payments, shipments, customers, agentCalls,
 } from "@/lib/db/schema";
 import { sql, gte, desc, and } from "drizzle-orm";
 import Link from "next/link";
-import { TrendingUp, Sparkles, ChevronRight } from "lucide-react";
+import { TrendingUp, Sparkles, ChevronRight, Bot } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -161,6 +161,8 @@ export default async function RetroPage() {
         </section>
       </div>
 
+      <AgentSpend sevenDaysAgo={sevenDaysAgo} fourteenDaysAgo={fourteenDaysAgo} />
+
       {/* Reflection prompts */}
       <section className="bg-slate-50 border border-slate-200 rounded-lg p-5">
         <h2 className="text-sm font-semibold text-slate-800 mb-3">Reflection Prompts (per gstack ETHOS)</h2>
@@ -179,4 +181,83 @@ export default async function RetroPage() {
 function pct(now: number, prev: number): number {
   if (prev === 0) return now > 0 ? 100 : 0;
   return ((now - prev) / prev) * 100;
+}
+
+async function AgentSpend({ sevenDaysAgo, fourteenDaysAgo }: { sevenDaysAgo: Date; fourteenDaysAgo: Date }) {
+  let byAgentThisWeek: Array<{ agent: string; calls: number; cost: number }> = [];
+  let totalThisWeek = 0;
+  let totalLastWeek = 0;
+  try {
+    const rows = await db.execute<{ agent_name: string; calls: string; cost: string }>(sql`
+      SELECT agent_name, COUNT(*)::text as calls, COALESCE(SUM(cost_usd), 0)::text as cost
+      FROM agent_calls
+      WHERE created_at >= ${sevenDaysAgo.toISOString()}
+      GROUP BY agent_name
+      ORDER BY SUM(cost_usd) DESC
+    `);
+    const data = (rows as unknown as { rows?: typeof rows }).rows ?? (rows as unknown as Array<{ agent_name: string; calls: string; cost: string }>);
+    byAgentThisWeek = (Array.isArray(data) ? data : []).map((r) => ({
+      agent: r.agent_name,
+      calls: parseInt(r.calls, 10) || 0,
+      cost: parseFloat(r.cost) || 0,
+    }));
+    totalThisWeek = byAgentThisWeek.reduce((s, r) => s + r.cost, 0);
+
+    const lastWeekRow = await db.execute<{ cost: string }>(sql`
+      SELECT COALESCE(SUM(cost_usd), 0)::text as cost
+      FROM agent_calls
+      WHERE created_at >= ${fourteenDaysAgo.toISOString()} AND created_at < ${sevenDaysAgo.toISOString()}
+    `);
+    const lastData = (lastWeekRow as unknown as { rows?: typeof lastWeekRow }).rows ?? (lastWeekRow as unknown as Array<{ cost: string }>);
+    totalLastWeek = parseFloat((Array.isArray(lastData) ? lastData[0]?.cost : "0") ?? "0") || 0;
+  } catch {}
+
+  if (byAgentThisWeek.length === 0 && totalLastWeek === 0) return null;
+
+  return (
+    <section className="bg-white border border-slate-200 rounded-lg p-5 shadow-sm mb-4">
+      <h2 className="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-1.5">
+        <Bot className="h-3.5 w-3.5 text-[#d10a11]" /> Agent Spend (7 days)
+      </h2>
+      <div className="grid grid-cols-3 gap-4 text-sm">
+        <div>
+          <div className="text-2xl font-bold text-slate-900 tabular-nums">${totalThisWeek.toFixed(2)}</div>
+          <div className="text-xs text-slate-500">This week</div>
+        </div>
+        <div>
+          <div className="text-2xl font-bold text-slate-700 tabular-nums">${totalLastWeek.toFixed(2)}</div>
+          <div className="text-xs text-slate-500">Last week</div>
+        </div>
+        <div>
+          <div className="text-2xl font-bold tabular-nums">
+            {totalThisWeek > totalLastWeek ? <span className="text-red-700">▲</span> : totalThisWeek < totalLastWeek ? <span className="text-emerald-700">▼</span> : <span className="text-slate-400">=</span>}
+            {" "}${Math.abs(totalThisWeek - totalLastWeek).toFixed(2)}
+          </div>
+          <div className="text-xs text-slate-500">Δ vs last week</div>
+        </div>
+      </div>
+      {byAgentThisWeek.length > 0 && (
+        <table className="w-full text-xs mt-4">
+          <thead className="text-slate-500">
+            <tr className="border-b border-slate-200">
+              <th className="text-left py-1.5 font-medium">Agent</th>
+              <th className="text-right py-1.5 font-medium">Calls</th>
+              <th className="text-right py-1.5 font-medium">Cost</th>
+              <th className="text-right py-1.5 font-medium">Avg / call</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 tabular-nums">
+            {byAgentThisWeek.map((r) => (
+              <tr key={r.agent}>
+                <td className="py-1.5 text-slate-700">{r.agent}</td>
+                <td className="py-1.5 text-right">{r.calls}</td>
+                <td className="py-1.5 text-right font-semibold">${r.cost.toFixed(4)}</td>
+                <td className="py-1.5 text-right text-slate-500">${r.calls > 0 ? (r.cost / r.calls).toFixed(4) : "0.0000"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
 }

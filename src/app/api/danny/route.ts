@@ -23,6 +23,7 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { DANNY_SYSTEM_PROMPT } from "@/domains/agents/danny.formulator";
+import { logAgentCall } from "@/domains/agents/cost";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -52,14 +53,16 @@ export async function POST(request: Request) {
     const userMessage = buildUserMessage({ actives, dosageForm, capsuleShell, servingsPerContainer, constraints });
 
     const client = new Anthropic({ apiKey });
+    const model = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-20250514";
+    const startedAt = Date.now();
+
     const response = await client.messages.create({
-      model: process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-20250514",
+      model,
       max_tokens: 4096,
       system: [
         {
           type: "text",
           text: DANNY_SYSTEM_PROMPT,
-          // Cache the long system prompt — Anthropic prompt caching cuts cost on repeat calls.
           cache_control: { type: "ephemeral" },
         },
       ],
@@ -70,6 +73,22 @@ export async function POST(request: Request) {
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
       .join("");
+
+    // Fire-and-forget telemetry
+    void logAgentCall({
+      agentName: "danny",
+      action: "bench-formulation",
+      model,
+      usage: {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+        cacheCreationTokens: response.usage.cache_creation_input_tokens ?? 0,
+        cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
+      },
+      durationMs: Date.now() - startedAt,
+      success: true,
+      notes: `${actives.length} actives, ${dosageForm}`,
+    });
 
     return NextResponse.json({
       success: true,
@@ -84,6 +103,14 @@ export async function POST(request: Request) {
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
     console.error("Danny error:", msg);
+    void logAgentCall({
+      agentName: "danny",
+      action: "bench-formulation",
+      model: process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-20250514",
+      usage: { inputTokens: 0, outputTokens: 0 },
+      success: false,
+      notes: msg.slice(0, 200),
+    });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

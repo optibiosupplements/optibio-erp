@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { ingredients } from "@/lib/db/schema";
 import { ilike, or, sql } from "drizzle-orm";
 import { buildAgentPrompt } from "@/domains/formulation/knowledge-base";
+import { logAgentCall } from "@/domains/agents/cost";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -120,8 +121,10 @@ export async function POST(request: Request) {
     }
 
     const client = new Anthropic({ apiKey });
+    const model = "claude-sonnet-4-20250514";
+    const startedAt = Date.now();
     const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model,
       max_tokens: 2048,
       system: systemPrompt,
       messages: apiMessages,
@@ -131,6 +134,21 @@ export async function POST(request: Request) {
       .filter((b: any) => b.type === "text")
       .map((b: any) => b.text)
       .join("");
+
+    void logAgentCall({
+      agentName: "eva",
+      action: "intake-chat",
+      model,
+      usage: {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+        cacheCreationTokens: (response.usage as { cache_creation_input_tokens?: number }).cache_creation_input_tokens ?? 0,
+        cacheReadTokens: (response.usage as { cache_read_input_tokens?: number }).cache_read_input_tokens ?? 0,
+      },
+      durationMs: Date.now() - startedAt,
+      success: true,
+      notes: context?.productName ? String(context.productName).slice(0, 100) : undefined,
+    });
 
     return NextResponse.json({
       success: true,
@@ -142,6 +160,14 @@ export async function POST(request: Request) {
     });
   } catch (error: any) {
     console.error("Agent error:", error);
+    void logAgentCall({
+      agentName: "eva",
+      action: "intake-chat",
+      model: "claude-sonnet-4-20250514",
+      usage: { inputTokens: 0, outputTokens: 0 },
+      success: false,
+      notes: String(error?.message ?? error).slice(0, 200),
+    });
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

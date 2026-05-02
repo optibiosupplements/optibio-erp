@@ -578,6 +578,45 @@ export const appSettings = pgTable("app_settings", {
 });
 
 // ============================================================================
+// PHASE 4 — AGENT TELEMETRY + HEARTBEATS (Paperclip-inspired patterns)
+// ============================================================================
+
+export const agentCalls = pgTable("agent_calls", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  agentName: text("agent_name").notNull(),       // "eva", "danny", "heartbeat:idle-rfq", etc.
+  action: text("action"),                          // optional sub-action label
+  model: text("model").notNull(),
+  inputTokens: integer("input_tokens").default(0).notNull(),
+  outputTokens: integer("output_tokens").default(0).notNull(),
+  cacheCreationTokens: integer("cache_creation_tokens").default(0),
+  cacheReadTokens: integer("cache_read_tokens").default(0),
+  costUsd: numeric("cost_usd", { precision: 10, scale: 6 }).notNull(),
+  durationMs: integer("duration_ms"),
+  success: boolean("success").notNull().default(true),
+  relatedTable: text("related_table"),
+  relatedId: uuid("related_id"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const heartbeats = pgTable("heartbeats", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").unique().notNull(),           // "idle-rfq-scan", "expiring-coa-check", etc.
+  label: text("label").notNull(),
+  description: text("description"),
+  scheduleCron: text("schedule_cron").notNull(),    // e.g. "0 9 * * *" for daily 9am
+  enabled: boolean("enabled").notNull().default(true),
+  configJson: text("config_json"),                  // arbitrary handler config
+  lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+  lastRunStatus: text("last_run_status"),           // "ok", "error", "no_action"
+  lastRunOutput: text("last_run_output"),
+  totalRuns: integer("total_runs").notNull().default(0),
+  totalActions: integer("total_actions").notNull().default(0),  // # of follow-ups created
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ============================================================================
 // PHASE 3.5 — SUPPLIER PURCHASE ORDERS (raw material procurement)
 // ============================================================================
 

@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Inbox, FlaskConical, FileText, ShoppingCart, Factory, Package,
   FileCheck, Users, Building2, Pill, Settings, PanelLeftClose, PanelLeftOpen, LogOut,
   TrendingUp, Truck, Receipt, DollarSign, CheckSquare, PackageOpen, Lightbulb, RotateCcw,
-  Boxes, ClipboardList,
+  Boxes, ClipboardList, Activity,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -32,6 +32,7 @@ const NAV_ITEMS = [
   { href: "/supplier-pos", label: "Supplier POs", icon: ClipboardList, match: (p: string) => p.startsWith("/supplier-pos") },
   { href: "/retro", label: "Retro", icon: RotateCcw, match: (p: string) => p.startsWith("/retro") },
   { href: "/learnings", label: "Learnings", icon: Lightbulb, match: (p: string) => p.startsWith("/learnings") },
+  { href: "/heartbeats", label: "Heartbeats", icon: Activity, match: (p: string) => p.startsWith("/heartbeats") },
   { href: "/settings", label: "Settings", icon: Settings, match: (p: string) => p.startsWith("/settings") },
 ];
 
