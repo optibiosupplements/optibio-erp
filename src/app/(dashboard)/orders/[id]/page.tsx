@@ -1,10 +1,10 @@
 import { db } from "@/lib/db";
-import { purchaseOrders, poLineItems, customers, formulations, quotes } from "@/lib/db/schema";
-import { asc, eq } from "drizzle-orm";
+import { purchaseOrders, poLineItems, customers, formulations, quotes, finishedProductLots, shipments } from "@/lib/db/schema";
+import { asc, eq, desc } from "drizzle-orm";
 import Link from "next/link";
-import { ShoppingCart, ChevronLeft, FlaskConical, Factory } from "lucide-react";
+import { ShoppingCart, ChevronLeft, FlaskConical, Factory, Truck } from "lucide-react";
 import { notFound } from "next/navigation";
-import { StartProductionRunButton } from "./actions";
+import { StartProductionRunButton, CreateShipmentButton } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +33,19 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
     .where(eq(poLineItems.purchaseOrderId, id))
     .orderBy(asc(poLineItems.sortOrder));
 
+  // Lots produced for this PO's formulation that are Released or In QC
+  const formulationIds = lines.map((l) => l.formulation?.id).filter((x): x is string => !!x);
+  const availableLots = formulationIds.length > 0
+    ? await db.select().from(finishedProductLots)
+      .where(eq(finishedProductLots.formulationId, formulationIds[0]))
+      .orderBy(desc(finishedProductLots.createdAt))
+      .limit(20)
+    : [];
+
+  const poShipments = await db.select().from(shipments).where(eq(shipments.purchaseOrderId, id)).orderBy(desc(shipments.createdAt));
+
   const canStartRun = po.status === "Accepted" && lines.length > 0;
+  const canShip = ["In Production", "QC Hold", "Released"].includes(po.status) && availableLots.length > 0;
 
   return (
     <div className="max-w-6xl mx-auto pb-12">
@@ -58,9 +70,10 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
             {quote && <span>· from <Link href={`/quotes/${quote.id}`} className="text-slate-700 hover:text-[#d10a11]">{quote.quoteNumber}</Link></span>}
           </div>
         </div>
-        {canStartRun && (
-          <StartProductionRunButton purchaseOrderId={po.id} targetBatchSize={po.tierQuantity} />
-        )}
+        <div className="flex flex-col items-end gap-2">
+          {canStartRun && <StartProductionRunButton purchaseOrderId={po.id} targetBatchSize={po.tierQuantity} />}
+          {canShip && <CreateShipmentButton purchaseOrderId={po.id} defaultUnits={po.tierQuantity} availableLots={availableLots.map((l) => ({ id: l.id, lotNumber: l.lotNumber, quantityUnits: l.quantityUnits }))} />}
+        </div>
       </div>
 
       <section className="bg-white border border-slate-200 rounded-lg p-5 mb-4 shadow-sm">
@@ -124,10 +137,32 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         </table>
       </section>
 
-      {!canStartRun && po.status !== "Accepted" && (
-        <p className="text-xs text-slate-500 mt-4 flex items-center gap-1.5">
-          <Factory className="h-3 w-3" /> Production run started — see <Link href="/batches" className="text-[#d10a11] underline">batches</Link>.
-        </p>
+      {poShipments.length > 0 && (
+        <section className="bg-white border border-slate-200 rounded-lg overflow-hidden mt-4 shadow-sm">
+          <h2 className="text-sm font-semibold text-slate-800 px-5 py-3 border-b border-slate-200 bg-slate-50 flex items-center gap-1.5">
+            <Truck className="h-3.5 w-3.5 text-[#d10a11]" /> Shipments ({poShipments.length})
+          </h2>
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 text-slate-500"><tr>
+              <th className="text-left px-4 py-1.5 font-medium">Carrier</th>
+              <th className="text-left px-4 py-1.5 font-medium">Tracking</th>
+              <th className="text-right px-4 py-1.5 font-medium">Units</th>
+              <th className="text-left px-4 py-1.5 font-medium">Ship Date</th>
+              <th className="text-left px-4 py-1.5 font-medium">Status</th>
+            </tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {poShipments.map((sh) => (
+                <tr key={sh.id} className="hover:bg-slate-50/50">
+                  <td className="px-4 py-1.5"><Link href={`/shipments/${sh.id}`} className="text-slate-900 hover:text-[#d10a11]">{sh.carrier ?? "—"}</Link></td>
+                  <td className="px-4 py-1.5 font-mono text-slate-700">{sh.trackingNumber ?? "—"}</td>
+                  <td className="px-4 py-1.5 text-right tabular-nums">{sh.quantityUnits.toLocaleString()}</td>
+                  <td className="px-4 py-1.5 text-slate-600">{sh.shipDate ?? "—"}</td>
+                  <td className="px-4 py-1.5"><span className="inline-block px-2 py-0.5 text-[10px] font-medium rounded-full bg-slate-100 text-slate-700">{sh.status}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
       )}
     </div>
   );

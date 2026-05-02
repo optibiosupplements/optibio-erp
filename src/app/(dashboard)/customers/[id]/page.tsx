@@ -5,8 +5,9 @@ import {
 } from "@/lib/db/schema";
 import { eq, desc, sql } from "drizzle-orm";
 import Link from "next/link";
-import { ChevronLeft, Users, Mail, Phone, MapPin, FileText, ShoppingCart, FlaskConical, FileCheck, TrendingUp } from "lucide-react";
+import { ChevronLeft, Users, Mail, Phone, MapPin, FileText, ShoppingCart, FileCheck, TrendingUp, Clock } from "lucide-react";
 import { notFound } from "next/navigation";
+import { ActivityTimeline } from "@/components/ActivityTimeline";
 
 export const dynamic = "force-dynamic";
 
@@ -202,6 +203,14 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
           </table>
         </section>
       )}
+
+      {/* Activity Timeline */}
+      <section className="bg-white border border-slate-200 rounded-lg p-5 mb-4 shadow-sm">
+        <h2 className="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-1.5">
+          <Clock className="h-3.5 w-3.5 text-[#d10a11]" /> Activity Timeline
+        </h2>
+        <ActivityTimeline customerId={id} limit={15} />
+      </section>
 
       {/* RFQs + Leads + Opportunities */}
       {(customerRfqs.length > 0 || customerLeads.length > 0 || customerOpps.length > 0) && (

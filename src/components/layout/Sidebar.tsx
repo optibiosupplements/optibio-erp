@@ -5,11 +5,13 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import {
   LayoutDashboard, Inbox, FlaskConical, FileText, ShoppingCart, Factory, Package,
-  FileCheck, Users, Truck, Pill, Settings, PanelLeftClose, PanelLeftOpen, LogOut,
+  FileCheck, Users, Building2, Pill, Settings, PanelLeftClose, PanelLeftOpen, LogOut,
+  TrendingUp, Truck,
 } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, match: (p: string) => p === "/" },
+  { href: "/pipeline", label: "Pipeline", icon: TrendingUp, match: (p: string) => p.startsWith("/pipeline") },
   { href: "/intake", label: "Intake", icon: Inbox, match: (p: string) => p.startsWith("/intake") },
   { href: "/formulations", label: "The Lab", icon: FlaskConical, match: (p: string) => p.startsWith("/formulations") },
   { href: "/quotes", label: "Quotes", icon: FileText, match: (p: string) => p.startsWith("/quotes") },
@@ -17,8 +19,9 @@ const NAV_ITEMS = [
   { href: "/batches", label: "Production", icon: Factory, match: (p: string) => p.startsWith("/batches") },
   { href: "/lots", label: "Lots", icon: Package, match: (p: string) => p.startsWith("/lots") },
   { href: "/coas", label: "COAs", icon: FileCheck, match: (p: string) => p.startsWith("/coas") },
+  { href: "/shipments", label: "Shipments", icon: Truck, match: (p: string) => p.startsWith("/shipments") },
   { href: "/customers", label: "Customers", icon: Users, match: (p: string) => p.startsWith("/customers") },
-  { href: "/suppliers", label: "Suppliers", icon: Truck, match: (p: string) => p.startsWith("/suppliers") },
+  { href: "/suppliers", label: "Suppliers", icon: Building2, match: (p: string) => p.startsWith("/suppliers") },
   { href: "/ingredients", label: "Ingredients", icon: Pill, match: (p: string) => p.startsWith("/ingredients") },
   { href: "/settings", label: "Settings", icon: Settings, match: (p: string) => p.startsWith("/settings") },
 ];
