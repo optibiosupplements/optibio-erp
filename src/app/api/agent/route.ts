@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { ingredients } from "@/lib/db/schema";
 import { ilike, or, sql } from "drizzle-orm";
 import { buildAgentPrompt } from "@/domains/formulation/knowledge-base";
-import { logAgentCall } from "@/domains/agents/cost";
+import { logAgentCall, assertWithinBudget, BudgetExceededError } from "@/domains/agents/cost";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -29,6 +29,8 @@ export async function POST(request: Request) {
   }
 
   try {
+    await assertWithinBudget();
+
     const body = await request.json();
     const { messages = [], context = {} } = body;
 
@@ -121,12 +123,14 @@ export async function POST(request: Request) {
     }
 
     const client = new Anthropic({ apiKey });
-    const model = "claude-sonnet-4-20250514";
+    // Eva is intake conversation, not novel reasoning — Haiku 4.5 is 3x cheaper
+    // than Sonnet and fast enough. Override via EVA_MODEL for harder cases.
+    const model = process.env.EVA_MODEL ?? "claude-haiku-4-5-20251001";
     const startedAt = Date.now();
     const response = await client.messages.create({
       model,
       max_tokens: 2048,
-      system: systemPrompt,
+      system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
       messages: apiMessages,
     });
 
@@ -159,11 +163,14 @@ export async function POST(request: Request) {
       },
     });
   } catch (error: any) {
+    if (error instanceof BudgetExceededError) {
+      return NextResponse.json({ error: error.message, scope: error.scope }, { status: 429 });
+    }
     console.error("Agent error:", error);
     void logAgentCall({
       agentName: "eva",
       action: "intake-chat",
-      model: "claude-sonnet-4-20250514",
+      model: process.env.EVA_MODEL ?? "claude-haiku-4-5-20251001",
       usage: { inputTokens: 0, outputTokens: 0 },
       success: false,
       notes: String(error?.message ?? error).slice(0, 200),

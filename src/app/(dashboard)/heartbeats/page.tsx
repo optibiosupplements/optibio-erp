@@ -4,6 +4,8 @@ import { desc } from "drizzle-orm";
 import { Activity } from "lucide-react";
 import { HeartbeatList } from "./list";
 import { SEEDED_HEARTBEATS } from "@/domains/heartbeats/handlers";
+import { getBudgetStatus } from "@/domains/agents/cost";
+import { BudgetBadge } from "@/components/agents/BudgetBadge";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +29,11 @@ export default async function HeartbeatsPage() {
     rows.sort((a, b) => a.label.localeCompare(b.label));
   } catch {}
 
+  let budget: Awaited<ReturnType<typeof getBudgetStatus>> | null = null;
+  try {
+    budget = await getBudgetStatus();
+  } catch {}
+
   return (
     <div className="max-w-5xl mx-auto pb-12">
       <div className="flex items-center justify-between mb-5">
@@ -39,6 +46,7 @@ export default async function HeartbeatsPage() {
             Autonomous tasks that fire on a cron schedule. Vercel Cron pings <code className="font-mono bg-slate-100 px-1 py-0.5 rounded text-[11px]">/api/heartbeats/run-due</code> hourly. Manual trigger available below.
           </p>
         </div>
+        {budget && <BudgetBadge status={budget} compact />}
       </div>
 
       <HeartbeatList

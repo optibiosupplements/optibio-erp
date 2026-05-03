@@ -32,22 +32,35 @@ Replaces the current Excel-based RFQ → bench formulation → quote → CRM wor
 
 ## gstack workflow (Garry Tan's setup)
 
-This repo is configured to use [`gstack`](https://github.com/garrytan/gstack) — 23 opinionated slash commands for plan/review/QA/ship cycles. Once gstack is installed (`~/.claude/skills/gstack`), these are available:
+This repo uses [`gstack`](https://github.com/garrytan/gstack) for plan/review/QA/ship discipline. **Solo-operator default loop is 6 commands** — that's it. Don't run the rest unless the work asks for it.
+
+### Primary loop (use these by default)
 
 | Phase | Command | Purpose |
 |---|---|---|
-| Kickoff | `/office-hours` | Reframe a feature before coding |
-| Plan | `/autoplan`, `/plan-ceo-review`, `/plan-eng-review`, `/plan-design-review`, `/plan-devex-review` | Multi-role plan review |
-| Design | `/design-consultation`, `/design-shotgun`, `/design-html`, `/design-review` | Design system + variants + audit |
-| Code | `/careful`, `/freeze data/ scripts/`, `/guard` | Safety rails while editing |
+| Plan | `/autoplan` | Multi-role plan review for any non-trivial feature |
 | Pre-push | `/review` | Pre-PR review for prod-bug-class issues |
-| QA | `/qa`, `/qa-only`, `/browse`, `/connect-chrome`, `/setup-browser-cookies` | Real-Chromium QA. **Use these, not `mcp__claude-in-chrome__*`.** |
-| Security | `/cso` | OWASP + STRIDE audit |
-| Release | `/ship`, `/canary`, `/land-and-deploy` | Test → push → PR → canary → land |
-| After ship | `/document-release`, `/retro` | Doc updates + weekly retro |
-| When stuck | `/investigate`, `/debug`, `/learn` | Systematic debugging |
+| QA | `/qa` | Real-Chromium smoke test before merge |
+| Release | `/ship` | Test → push → PR → land |
+| After ship | `/document-release` | Auto-update CHANGELOG / TODOS / ARCHITECTURE |
+| Weekly | `/retro` | KPI delta review |
 
-BMAD method (planning-only) is also installed under `_bmad/` and `.claude/skills/bmad-*`. BMAD is for upfront PRD/architecture/epics; gstack is for the daily plan→build→review→ship loop. They coexist.
+### Advanced (à la carte — only when the work needs them)
+
+The full gstack ships ~47 commands. Reach for these only when a specific problem matches:
+
+- **CEO/Eng/Design plan reviews:** `/plan-ceo-review`, `/plan-eng-review`, `/plan-design-review`, `/plan-devex-review` — for major architecture or scope decisions
+- **Design system work:** `/design-consultation`, `/design-shotgun`, `/design-html`, `/design-review` — only when building a new screen from scratch
+- **Browser:** `/browse`, `/connect-chrome`, `/setup-browser-cookies` — sub-tools used by `/qa`. **Use these, not `mcp__claude-in-chrome__*`.**
+- **Safety rails:** `/careful`, `/freeze`, `/guard` — when editing destructive code paths
+- **Security:** `/cso` — once before first prod deploy, then monthly
+- **Release variants:** `/canary`, `/land-and-deploy` — when shipping risky changes
+- **Debugging:** `/investigate`, `/debug`, `/learn` — when stuck on a specific bug
+- **Kickoff:** `/office-hours` — for reframing a fuzzy product idea
+
+The full list lives under `~/.claude/skills/gstack/`. Solo, the 6-command loop is enough. Bureaucracy is what killed the prior 13 repos — protect your shipping cadence.
+
+BMAD method (planning-only) is also installed under `_bmad/` and `.claude/skills/bmad-*`. BMAD is for upfront PRD/architecture/epics; gstack is for the daily plan→build→review→ship loop.
 
 ## Directives that supersede defaults
 

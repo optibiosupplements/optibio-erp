@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Save, Loader2, CheckCircle2, AlertTriangle, DollarSign, Factory, Package, Building2, Wrench } from "lucide-react";
+import { Save, Loader2, CheckCircle2, AlertTriangle, DollarSign, Factory, Package, Building2, Wrench, Bot } from "lucide-react";
 
 interface Field {
   key: string;
@@ -74,6 +74,14 @@ const SECTIONS: Section[] = [
     fields: [
       { key: "app.dueDays", label: "Default Due Days", type: "number", suffix: "days" },
       { key: "app.taxRatePct", label: "Default Tax Rate", type: "number", suffix: "%" },
+    ],
+  },
+  {
+    title: "AI Agent Budget",
+    icon: Bot,
+    fields: [
+      { key: "agent.daily_usd_cap", label: "Daily Cap", type: "number", prefix: "$", hint: "Hard ceiling on Anthropic spend per day. Set 0 to disable." },
+      { key: "agent.monthly_usd_cap", label: "Monthly Cap", type: "number", prefix: "$", hint: "Hard ceiling per calendar month. Defaults: $5/day, $50/month." },
     ],
   },
 ];

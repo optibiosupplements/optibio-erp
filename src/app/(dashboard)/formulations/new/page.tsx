@@ -234,6 +234,21 @@ function Workbench() {
     setDannyLoading(true);
     setDannyReply("");
     try {
+      // Pass the deterministic formula so Danny enriches rather than recomputes.
+      // If the API fails, the deterministic sizing/excipient table still renders.
+      const precomputed = calc.sizing
+        ? {
+            totalActiveMg: calc.totalActiveMg,
+            capsuleSize: calc.sizing.capsuleSize,
+            capsulesPerServing: calc.sizing.capsulesPerServing,
+            totalMgPerCapsule: calc.sizing.totalMgPerCapsule,
+            fillPercentage: calc.sizing.fillPercentage,
+            feasible: calc.sizing.feasible,
+            warnings: calc.sizing.warnings,
+            excipients: calc.excipients ?? undefined,
+          }
+        : undefined;
+
       const res = await fetch("/api/danny", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -242,11 +257,17 @@ function Workbench() {
           dosageForm,
           capsuleShell,
           servingsPerContainer: parseInt(servingsPerContainer, 10) || undefined,
+          precomputed,
         }),
       });
       const data = await res.json();
-      if (data.success) setDannyReply(data.reply);
-      else setDannyReply(`Error: ${data.error}`);
+      if (res.status === 429) {
+        setDannyReply(`AI commentary unavailable: ${data.error}. The deterministic formula above is unaffected.`);
+      } else if (data.success) {
+        setDannyReply(data.reply);
+      } else {
+        setDannyReply(`AI commentary unavailable: ${data.error ?? "unknown error"}. The deterministic formula above is unaffected.`);
+      }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setDannyReply(`Error: ${msg}`);
