@@ -10,7 +10,8 @@
  */
 
 import { db } from "@/lib/db";
-import { agentCalls } from "@/lib/db/schema";
+import { agentCalls, appSettings } from "@/lib/db/schema";
+import { eq, gte, sql } from "drizzle-orm";
 
 interface ModelPricing {
   input: number;            // $/MTok base input
@@ -89,3 +90,88 @@ export async function logAgentCall(args: LogCallArgs): Promise<void> {
     console.error("agent call log failed:", e instanceof Error ? e.message : String(e));
   }
 }
+
+// ----------------------------------------------------------------------------
+// Hard budget caps. Reads `agent.daily_usd_cap` + `agent.monthly_usd_cap` from
+// app_settings. Defaults: $5/day, $50/month. Set "0" to disable a cap.
+// ----------------------------------------------------------------------------
+
+export class BudgetExceededError extends Error {
+  constructor(public readonly scope: "daily" | "monthly", public readonly spentUsd: number, public readonly capUsd: number) {
+    super(`Agent ${scope} budget cap exceeded: $${spentUsd.toFixed(4)} / $${capUsd.toFixed(2)}`);
+    this.name = "BudgetExceededError";
+  }
+}
+
+const DEFAULT_DAILY_CAP_USD = 5;
+const DEFAULT_MONTHLY_CAP_USD = 50;
+
+async function readCap(key: string, fallback: number): Promise<number> {
+  try {
+    const row = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
+    if (row.length === 0) return fallback;
+    const n = Number(row[0].value);
+    return Number.isFinite(n) ? n : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export interface BudgetStatus {
+  todayUsd: number;
+  monthUsd: number;
+  dailyCapUsd: number;
+  monthlyCapUsd: number;
+  dailyExceeded: boolean;
+  monthlyExceeded: boolean;
+}
+
+export async function getBudgetStatus(): Promise<BudgetStatus> {
+  const now = new Date();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const [dailyCap, monthlyCap] = await Promise.all([
+    readCap("agent.daily_usd_cap", DEFAULT_DAILY_CAP_USD),
+    readCap("agent.monthly_usd_cap", DEFAULT_MONTHLY_CAP_USD),
+  ]);
+
+  const [todayRow] = await db
+    .select({ total: sql<string>`coalesce(sum(${agentCalls.costUsd}), 0)` })
+    .from(agentCalls)
+    .where(gte(agentCalls.createdAt, startOfDay));
+
+  const [monthRow] = await db
+    .select({ total: sql<string>`coalesce(sum(${agentCalls.costUsd}), 0)` })
+    .from(agentCalls)
+    .where(gte(agentCalls.createdAt, startOfMonth));
+
+  const todayUsd = Number(todayRow?.total ?? 0);
+  const monthUsd = Number(monthRow?.total ?? 0);
+
+  return {
+    todayUsd,
+    monthUsd,
+    dailyCapUsd: dailyCap,
+    monthlyCapUsd: monthlyCap,
+    dailyExceeded: dailyCap > 0 && todayUsd >= dailyCap,
+    monthlyExceeded: monthlyCap > 0 && monthUsd >= monthlyCap,
+  };
+}
+
+/**
+ * Throws BudgetExceededError if today or this month is over the cap.
+ * Caller should catch and return a 429.
+ *
+ * Cheap to call — two indexed sums against `agent_calls.created_at`.
+ */
+export async function assertWithinBudget(): Promise<void> {
+  const status = await getBudgetStatus();
+  if (status.dailyExceeded) {
+    throw new BudgetExceededError("daily", status.todayUsd, status.dailyCapUsd);
+  }
+  if (status.monthlyExceeded) {
+    throw new BudgetExceededError("monthly", status.monthUsd, status.monthlyCapUsd);
+  }
+}
+

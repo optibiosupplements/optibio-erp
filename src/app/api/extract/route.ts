@@ -3,6 +3,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/lib/db";
 import { ingredients } from "@/lib/db/schema";
 import { ilike, or, sql } from "drizzle-orm";
+import { parseIngredients } from "@/domains/intake/ingredient-parser";
+import { detectFormat } from "@/domains/intake/format-detector";
+import { assertWithinBudget, BudgetExceededError } from "@/domains/agents/cost";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -59,6 +62,8 @@ export async function POST(request: Request) {
     let extractedData: any;
 
     if (file) {
+      // Vision is the only LLM-bearing branch in this route.
+      await assertWithinBudget();
       const buffer = Buffer.from(await file.arrayBuffer());
       const base64 = buffer.toString("base64");
       const mimeType = file.type || "application/pdf";
@@ -97,17 +102,29 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: `Unsupported file type: ${mimeType}. Use PDF, PNG, or JPG.` }, { status: 400 });
       }
     } else if (textInput) {
-      // Plain text — paste supplement facts
-      const response = await client.messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 4096,
-        system: SYSTEM_PROMPT,
-        messages: [{
-          role: "user",
-          content: `Extract the supplement facts from this text:\n\n${textInput}\n\nReturn JSON only.`,
-        }],
-      });
-      extractedData = parseAIResponse(response);
+      // Plain text — use the deterministic parser instead of an LLM call.
+      // Equivalent extraction, zero token cost, deterministic output.
+      const parsed = parseIngredients(textInput);
+      const fmt = detectFormat(textInput);
+      extractedData = {
+        productName: null,
+        dosageForm: fmt.format && fmt.isSupported ? String(fmt.format).toLowerCase() : null,
+        servingSize: null,
+        servingSizeUnit: null,
+        servingsPerContainer: null,
+        flavor: null,
+        activeIngredients: parsed.filter((p) => p.isActive).map((p) => ({
+          name: p.name,
+          amount: p.amount ? Number(p.amount) : null,
+          unit: p.unit || "mg",
+          percentDV: null,
+          notes: p.notes || null,
+        })),
+        otherIngredients: parsed.filter((p) => !p.isActive).map((p) => p.name),
+        allergenInfo: null,
+        brandedIngredients: [],
+        warnings: fmt.warning ?? null,
+      };
     }
 
     if (!extractedData) {
@@ -144,6 +161,9 @@ export async function POST(request: Request) {
       matchedExcipients,
     });
   } catch (error: any) {
+    if (error instanceof BudgetExceededError) {
+      return NextResponse.json({ error: error.message, scope: error.scope }, { status: 429 });
+    }
     console.error("Extract error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
